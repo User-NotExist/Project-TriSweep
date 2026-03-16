@@ -1,31 +1,555 @@
-from scenes.scene_base import SceneBase
 from pathlib import Path
+
+import pygame
+
+from components.song import Song
+from scenes.scene_base import SceneBase
 
 EASY_COLOR = (52, 235, 58)
 ADVANCED_COLOR = (250, 165, 37)
 EXPERT_COLOR = (250, 41, 37)
-MASTER_COLOR = (156, 39, 176)
+MASTER_COLOR = (237, 71, 255)
 SONG_ASSET_PATH = Path("./data/songs/")
+
+DIFFICULTY_COLORS = {
+    "easy": EASY_COLOR,
+    "advanced": ADVANCED_COLOR,
+    "expert": EXPERT_COLOR,
+    "master": MASTER_COLOR,
+}
 
 class SongSelect(SceneBase):
     def __init__(self):
         super().__init__()
 
-        songs_folder = [f for f in SONG_ASSET_PATH.iterdir() if f.is_dir()]
+        self.background_color = (18, 22, 31)
+        self.sidebar_color = (26, 31, 43)
+        self.card_color = (39, 47, 64)
+        self.card_selected_color = (71, 128, 245)
+        self.text_color = (240, 244, 252)
+        self.subtle_text_color = (167, 176, 197)
+
+        self.margin = 20
+        self.columns = 3
+        self.sidebar_width = 300
+        self.card_size = (180, 220)
+        self.card_gap = 16
+        self.thumb_size = (160, 160)
+        self.selected_index = 0
+        self.scroll_y = 0
+        self.max_scroll = 0
+
+        self.title_font = self._create_font(28, bold=True)
+        self.song_title_font = self._create_font(18, bold=True)
+        self.song_artist_font = self._create_font(14)
+        self.small_font = self._create_font(12)
+        self.sidebar_title_font = self._create_font(26, bold=True)
+        self.sidebar_artist_font = self._create_font(18)
+        self.diff_font = self._create_font(16, bold=True)
+
+        self.marquee_speed_px_per_sec = 45
+        self.marquee_gap_px = 60
+
+        self.song_card_rects = []
+        self.diff_card_rects = []
+        self.start_button_rect = pygame.Rect(0, 0, 0, 0)
+        self.layout_size = (0, 0)
+        self.grid_area = pygame.Rect(0, 0, 0, 0)
+        self.sidebar_area = pygame.Rect(0, 0, 0, 0)
+        self.selected_difficulty_index = 0
+
+        self._preview_song_index = None
+        self._preview_started_ms = 0
+        self._preview_start_sec = 0.0
+        self._preview_duration_sec = 0.0
+        self._preview_loaded_path = None
+        self._preview_enabled = True
+        self._preview_is_fading_out = False
+
+        self.preview_fade_in_ms = 250
+        self.preview_fade_out_ms = 250
+
         self.songs = []
+        self._thumb_cache = {}
+        self._large_cache = {}
+        self._load_songs()
+        if self.songs:
+            self._start_selected_preview()
+
+    def _create_font(self, size, bold=False):
+        # Prefer CJK-capable fonts first so Japanese titles/artists render correctly.
+        candidates = [
+            "meiryo",
+            "yu gothic ui",
+            "yugothic",
+            "ms gothic",
+            "msgothic",
+            "noto sans cjk jp",
+            "arial unicode ms",
+            "segoe ui",
+            "arial",
+        ]
+
+        for name in candidates:
+            font_path = pygame.font.match_font(name)
+            if font_path:
+                font = pygame.font.Font(font_path, size)
+                font.set_bold(bold)
+                return font
+
+        fallback = pygame.font.SysFont(None, size)
+        fallback.set_bold(bold)
+        return fallback
+
+    def _draw_looping_text(self, surface, text, font, color, rect):
+        text = text or ""
+        text_surface = font.render(text, True, color)
+        text_w = text_surface.get_width()
+
+        if text_w <= rect.width:
+            surface.blit(text_surface, (rect.x, rect.y))
+            return
+
+        now_ms = pygame.time.get_ticks()
+        offset = int((now_ms / 1000.0) * self.marquee_speed_px_per_sec)
+        loop_distance = text_w + self.marquee_gap_px
+        scroll_x = offset % loop_distance
+
+        previous_clip = surface.get_clip()
+        surface.set_clip(rect)
+        draw_x = rect.x - scroll_x
+        surface.blit(text_surface, (draw_x, rect.y))
+        surface.blit(text_surface, (draw_x + loop_distance, rect.y))
+        surface.set_clip(previous_clip)
+
+    def _load_songs(self):
+        if not SONG_ASSET_PATH.exists():
+            print(f"Warning: Song asset path not found: {SONG_ASSET_PATH}")
+            return
+
+        songs_folder = sorted([f for f in SONG_ASSET_PATH.iterdir() if f.is_dir()])
         for folder in songs_folder:
             meta_path = folder / "meta.jsonc"
-            if meta_path.exists():
-                self.songs.append(Song(folder))
-            else:
+            if not meta_path.exists():
                 print(f"Warning: meta.jsonc not found in {folder}, skipping...")
+                continue
+
+            song = Song(folder)
+            if not song.hidden:
+                self.songs.append(song)
+
+        self.songs.sort(key=lambda song: song.title.lower())
+
+    def _load_image(self, image_path, size):
+        cache_key = (str(image_path), size)
+        if size == self.thumb_size and cache_key in self._thumb_cache:
+            return self._thumb_cache[cache_key]
+        if size != self.thumb_size and cache_key in self._large_cache:
+            return self._large_cache[cache_key]
+
+        surface = pygame.Surface(size)
+        surface.fill((56, 64, 86))
+        pygame.draw.rect(surface, (89, 99, 127), surface.get_rect(), width=2)
+
+        try:
+            if image_path and Path(image_path).is_file():
+                loaded = pygame.image.load(str(image_path)).convert_alpha()
+                surface = pygame.transform.smoothscale(loaded, size)
+        except Exception as error:
+            print(f"Warning: Failed to load jacket image '{image_path}': {error}")
+
+        if size == self.thumb_size:
+            self._thumb_cache[cache_key] = surface
+        else:
+            self._large_cache[cache_key] = surface
+        return surface
+
+    def _build_layout(self, width, height):
+        self.layout_size = (width, height)
+
+        self.sidebar_area = pygame.Rect(width - self.sidebar_width, 0, self.sidebar_width, height)
+        self.grid_area = pygame.Rect(0, 0, width - self.sidebar_width, height)
+
+        available_w = self.grid_area.width - (self.margin * 2) - (self.card_gap * (self.columns - 1))
+        card_w = min(150, available_w // self.columns)
+        card_h = int(card_w * 1.7)
+        self.card_size = (card_w, card_h)
+        self.thumb_size = (card_w - 20, card_w - 20)
+
+        self.song_card_rects = []
+        top_y = self.margin + 52 - self.scroll_y
+        for index, _song in enumerate(self.songs):
+            col = index % self.columns
+            row = index // self.columns
+            x = self.margin + col * (self.card_size[0] + self.card_gap)
+            y = top_y + row * (self.card_size[1] + self.card_gap)
+            self.song_card_rects.append(pygame.Rect(x, y, self.card_size[0], self.card_size[1]))
+
+        row_count = (len(self.songs) + self.columns - 1) // self.columns
+        content_height = self.margin + 52 + row_count * (self.card_size[1] + self.card_gap)
+        self.max_scroll = max(0, content_height - self.grid_area.height + self.margin)
+        self.scroll_y = max(0, min(self.scroll_y, self.max_scroll))
+
+    def _rebuild_for_scroll(self):
+        if self.layout_size != (0, 0):
+            self._build_layout(*self.layout_size)
+
+    def _card_at_pos(self, pos):
+        if not self.grid_area.collidepoint(pos):
+            return None
+        for index, card_rect in enumerate(self.song_card_rects):
+            if card_rect.collidepoint(pos):
+                return index
+        return None
+
+    def _ensure_selection_visible(self):
+        if not self.songs or not self.song_card_rects:
+            return
+
+        selected_rect = self.song_card_rects[self.selected_index]
+        top_limit = self.margin + 52
+        bottom_limit = self.grid_area.height - self.margin
+
+        if selected_rect.top < top_limit:
+            self.scroll_y = max(0, self.scroll_y - (top_limit - selected_rect.top))
+            self._rebuild_for_scroll()
+        elif selected_rect.bottom > bottom_limit:
+            self.scroll_y = min(self.max_scroll, self.scroll_y + (selected_rect.bottom - bottom_limit))
+            self._rebuild_for_scroll()
+
+    def _difficulty_color(self, name):
+        return DIFFICULTY_COLORS.get(name.strip().lower(), (194, 200, 214))
+
+    def _grid_chart_for_song(self, song, song_index):
+        if not song.difficulty:
+            return None
+        if song_index == self.selected_index:
+            pick = max(0, min(self.selected_difficulty_index, len(song.difficulty) - 1))
+            return song.difficulty[pick]
+        return song.difficulty[0]
+
+    def _ensure_mixer_ready(self):
+        if pygame.mixer.get_init() is not None:
+            return True
+        try:
+            pygame.mixer.init()
+            return True
+        except Exception as error:
+            print(f"Warning: Audio preview disabled, mixer init failed: {error}")
+            self._preview_enabled = False
+            return False
+
+    def _stop_preview(self):
+        if pygame.mixer.get_init() is not None:
+            pygame.mixer.music.stop()
+        self._preview_song_index = None
+        self._preview_is_fading_out = False
+
+    def _play_preview_for_index(self, song_index, force_reload=False):
+        if not self._preview_enabled or not self.songs:
+            return
+
+        if song_index < 0 or song_index >= len(self.songs):
+            return
+
+        if not self._ensure_mixer_ready():
+            return
+
+        song = self.songs[song_index]
+        music_path = song.music_path
+
+        if not music_path.is_file():
+            print(f"Warning: Music file not found for preview: {music_path}")
+            self._stop_preview()
+            return
+
+        preview_start = max(0.0, float(song.preview_start))
+        preview_duration = max(0.0, float(song.preview_duration))
+        if preview_duration <= 0.0:
+            preview_duration = 15.0
+
+        try:
+            if force_reload or self._preview_loaded_path != music_path:
+                pygame.mixer.music.load(str(music_path))
+                self._preview_loaded_path = music_path
+
+            pygame.mixer.music.play(loops=0, start=preview_start, fade_ms=self.preview_fade_in_ms)
+            self._preview_song_index = song_index
+            self._preview_started_ms = pygame.time.get_ticks()
+            self._preview_start_sec = preview_start
+            self._preview_duration_sec = preview_duration
+            self._preview_is_fading_out = False
+        except Exception as error:
+            print(f"Warning: Failed to play preview for '{song.title}': {error}")
+            self._stop_preview()
+
+    def _start_selected_preview(self):
+        self._play_preview_for_index(self.selected_index, force_reload=True)
+
+    def _set_selected_index(self, new_index):
+        if not self.songs:
+            return
+
+        clamped = max(0, min(new_index, len(self.songs) - 1))
+        if clamped != self.selected_index:
+            self.selected_index = clamped
+            self.selected_difficulty_index = 0
+            self._start_selected_preview()
+
+    def _difficulty_card_at_pos(self, pos):
+        for index, rect in enumerate(self.diff_card_rects):
+            if rect.collidepoint(pos):
+                return index
+        return None
+
+    def _start_selected_chart_dummy(self):
+        if not self.songs:
+            return
+
+        selected_song = self.songs[self.selected_index]
+        charts = selected_song.difficulty
+        if not charts:
+            print(f"Start clicked: {selected_song.title} (no chart available)")
+            return
+
+        self.selected_difficulty_index = max(0, min(self.selected_difficulty_index, len(charts) - 1))
+        chart = charts[self.selected_difficulty_index]
+        print(f"Start clicked: {selected_song.title} [{chart.name} Lv.{chart.level}]")
+
+    def OnSceneExit(self):
+        self._stop_preview()
 
 
     def ProcessInput(self, events):
-        pass
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    if self.start_button_rect.collidepoint(event.pos):
+                        self._start_selected_chart_dummy()
+                        continue
+
+                    picked_diff = self._difficulty_card_at_pos(event.pos)
+                    if picked_diff is not None:
+                        self.selected_difficulty_index = picked_diff
+                        continue
+
+                    picked_index = self._card_at_pos(event.pos)
+                    if picked_index is not None:
+                        self._set_selected_index(picked_index)
+                elif event.button == 4:
+                    self.scroll_y = max(0, self.scroll_y - 40)
+                    self._rebuild_for_scroll()
+                elif event.button == 5:
+                    self.scroll_y = min(self.max_scroll, self.scroll_y + 40)
+                    self._rebuild_for_scroll()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT and self.songs:
+                    self._set_selected_index(self.selected_index - 1)
+                elif event.key == pygame.K_RIGHT and self.songs:
+                    self._set_selected_index(self.selected_index + 1)
+                elif event.key == pygame.K_UP and self.songs:
+                    self._set_selected_index(self.selected_index - self.columns)
+                elif event.key == pygame.K_DOWN and self.songs:
+                    self._set_selected_index(self.selected_index + self.columns)
+                self._ensure_selection_visible()
+
+                if event.key == pygame.K_ESCAPE:
+                    from scenes.main_menu import MainMenu
+                    self.SwitchToScene(MainMenu())
 
     def Update(self):
-        pass
+        # Switch happens at end of frame in main loop; avoid restarting preview after OnSceneExit.
+        if self.next is not self:
+            return
+
+        if not self.songs:
+            self._stop_preview()
+            return
+
+        self.selected_index = max(0, min(self.selected_index, len(self.songs) - 1))
+        current_charts = self.songs[self.selected_index].difficulty
+        if current_charts:
+            self.selected_difficulty_index = max(0, min(self.selected_difficulty_index, len(current_charts) - 1))
+        else:
+            self.selected_difficulty_index = 0
+
+        if self._preview_song_index != self.selected_index:
+            self._start_selected_preview()
+            return
+
+        if not self._preview_enabled or self._preview_song_index is None:
+            return
+
+        if pygame.mixer.get_init() is None:
+            return
+
+        elapsed_seconds = (pygame.time.get_ticks() - self._preview_started_ms) / 1000.0
+        fade_out_seconds = self.preview_fade_out_ms / 1000.0
+
+        if (
+            not self._preview_is_fading_out
+            and self._preview_duration_sec > fade_out_seconds
+            and elapsed_seconds >= self._preview_duration_sec - fade_out_seconds
+        ):
+            pygame.mixer.music.fadeout(self.preview_fade_out_ms)
+            self._preview_is_fading_out = True
+
+        if elapsed_seconds >= self._preview_duration_sec or not pygame.mixer.music.get_busy():
+            self._play_preview_for_index(self.selected_index, force_reload=False)
 
     def Render(self, screen):
-        pass
+        width, height = screen.get_size()
+        if (width, height) != self.layout_size:
+            self._build_layout(width, height)
+
+        screen.fill(self.background_color)
+
+        grid_clip = pygame.Rect(self.grid_area.x, self.grid_area.y, self.grid_area.width, self.grid_area.height)
+        screen.set_clip(grid_clip)
+
+        header_surface = self.title_font.render("Song Select", True, self.text_color)
+        screen.blit(header_surface, (self.margin, self.margin))
+
+        if not self.songs:
+            empty_surface = self.song_title_font.render("No songs found in assets folder.", True, self.subtle_text_color)
+            screen.blit(empty_surface, (self.margin, self.margin + 64))
+        else:
+            for index, song in enumerate(self.songs):
+                card_rect = self.song_card_rects[index]
+                color = self.card_selected_color if index == self.selected_index else self.card_color
+                pygame.draw.rect(screen, color, card_rect, border_radius=10)
+
+                thumb = self._load_image(song.jacket_path, self.thumb_size)
+                thumb_rect = thumb.get_rect(midtop=(card_rect.centerx, card_rect.y + 10))
+                screen.blit(thumb, thumb_rect)
+
+                title_rect = pygame.Rect(card_rect.x + 10, thumb_rect.bottom + 8, card_rect.width - 20, self.song_title_font.get_height())
+                self._draw_looping_text(screen, song.title, self.song_title_font, self.text_color, title_rect)
+                artist_rect = pygame.Rect(card_rect.x + 10, thumb_rect.bottom + 30, card_rect.width - 20, self.song_artist_font.get_height())
+                self._draw_looping_text(screen, song.artist, self.song_artist_font, self.subtle_text_color, artist_rect)
+
+                charts = song.difficulty[:4]
+                if charts:
+                    badge_count = len(charts)
+                    badge_gap = 6
+                    badge_w = (card_rect.width - 20 - (badge_gap * (badge_count - 1))) // badge_count
+                    badge_h = 22
+                    badge_y = card_rect.bottom - 32
+
+                    for diff_index, chart in enumerate(charts):
+                        badge_x = card_rect.x + 10 + diff_index * (badge_w + badge_gap)
+                        badge_rect = pygame.Rect(badge_x, badge_y, badge_w, badge_h)
+                        badge_color = self._difficulty_color(chart.name)
+
+                        pygame.draw.rect(screen, (28, 34, 47), badge_rect, border_radius=6)
+                        pygame.draw.rect(screen, badge_color, badge_rect, width=2, border_radius=6)
+
+                        badge_level = f"{chart.level:g}" if isinstance(chart.level, (int, float)) else str(chart.level)
+                        badge_level_surface = self.diff_font.render(badge_level, True, badge_color)
+                        badge_level_rect = badge_level_surface.get_rect(center=badge_rect.center)
+                        screen.blit(badge_level_surface, badge_level_rect)
+
+        screen.set_clip(None)
+
+        pygame.draw.rect(screen, self.sidebar_color, self.sidebar_area)
+        pygame.draw.line(screen, (73, 86, 114), (self.sidebar_area.left, 0), (self.sidebar_area.left, height), 2)
+
+        if self.songs:
+            selected = self.songs[self.selected_index]
+            sidebar_pad = 18
+            title_rect = pygame.Rect(
+                self.sidebar_area.x + sidebar_pad,
+                sidebar_pad,
+                self.sidebar_area.width - (sidebar_pad * 2),
+                self.sidebar_title_font.get_height(),
+            )
+            self._draw_looping_text(screen, selected.title, self.sidebar_title_font, self.text_color, title_rect)
+
+            translated_title = selected.translated_title.strip()
+            translated_rect = pygame.Rect(
+                self.sidebar_area.x + sidebar_pad,
+                title_rect.bottom + 6,
+                self.sidebar_area.width - (sidebar_pad * 2),
+                self.song_artist_font.get_height(),
+            )
+            if translated_title and translated_title != selected.title:
+                self._draw_looping_text(screen, translated_title, self.song_artist_font, self.subtle_text_color, translated_rect)
+
+            artist_y = translated_rect.bottom + 8 if translated_title and translated_title != selected.title else title_rect.bottom + 8
+            artist_rect = pygame.Rect(
+                self.sidebar_area.x + sidebar_pad,
+                artist_y,
+                self.sidebar_area.width - (sidebar_pad * 2),
+                self.sidebar_artist_font.get_height(),
+            )
+            self._draw_looping_text(screen, selected.artist, self.sidebar_artist_font, self.subtle_text_color, artist_rect)
+
+            large_size = (self.sidebar_area.width - sidebar_pad * 2, self.sidebar_area.width - sidebar_pad * 2)
+            large_jacket = self._load_image(selected.jacket_path, large_size)
+            jacket_rect = large_jacket.get_rect(x=self.sidebar_area.x + sidebar_pad, y=artist_rect.bottom + 16)
+            screen.blit(large_jacket, jacket_rect)
+
+            jacket_frame_color = (95, 105, 133)
+            if selected.difficulty:
+                selected_diff_index = max(0, min(self.selected_difficulty_index, len(selected.difficulty) - 1))
+                jacket_frame_color = self._difficulty_color(selected.difficulty[selected_diff_index].name)
+
+            jacket_frame_rect = jacket_rect.inflate(8, 8)
+            pygame.draw.rect(screen, jacket_frame_color, jacket_frame_rect, width=4, border_radius=10)
+
+            diff_y = jacket_rect.bottom + 20
+            diff_header = self.song_title_font.render("Difficulty", True, self.text_color)
+            screen.blit(diff_header, (self.sidebar_area.x + sidebar_pad, diff_y))
+            diff_y += 30
+
+            self.diff_card_rects = []
+            card_height = 54
+            card_gap = 8
+
+            for index, chart in enumerate(selected.difficulty):
+                color = self._difficulty_color(chart.name)
+                card_rect = pygame.Rect(
+                    self.sidebar_area.x + sidebar_pad,
+                    diff_y,
+                    self.sidebar_area.width - (sidebar_pad * 2),
+                    card_height,
+                )
+                self.diff_card_rects.append(card_rect)
+
+                is_selected = index == self.selected_difficulty_index
+                fill_color = (50, 59, 81) if is_selected else (35, 42, 58)
+                border_color = color if is_selected else (95, 105, 133)
+
+                pygame.draw.rect(screen, fill_color, card_rect, border_radius=8)
+                pygame.draw.rect(screen, border_color, card_rect, width=2, border_radius=8)
+
+                diff_name_surface = self.diff_font.render(chart.name, True, color)
+                diff_name_rect = diff_name_surface.get_rect(topleft=(card_rect.x + 10, card_rect.y + 6))
+                screen.blit(diff_name_surface, diff_name_rect)
+
+                level_text = f"{chart.level:g}" if isinstance(chart.level, (int, float)) else str(chart.level)
+                level_surface = self.diff_font.render(level_text, True, color)
+                level_rect = level_surface.get_rect(topright=(card_rect.right - 10, card_rect.y + 6))
+                screen.blit(level_surface, level_rect)
+
+                charter_rect = pygame.Rect(card_rect.x + 10, card_rect.y + 30, card_rect.width - 20, self.small_font.get_height())
+                self._draw_looping_text(screen, chart.chart_author, self.small_font, self.subtle_text_color, charter_rect)
+
+                diff_y += card_height + card_gap
+
+            start_button_height = 42
+            self.start_button_rect = pygame.Rect(
+                self.sidebar_area.x + sidebar_pad,
+                self.sidebar_area.bottom - sidebar_pad - start_button_height,
+                self.sidebar_area.width - (sidebar_pad * 2),
+                start_button_height,
+            )
+
+            start_fill = (40, 155, 85)
+            start_border = (68, 213, 126)
+            pygame.draw.rect(screen, start_fill, self.start_button_rect, border_radius=10)
+            pygame.draw.rect(screen, start_border, self.start_button_rect, width=2, border_radius=10)
+
+            start_label = self.song_title_font.render("Start", True, (255, 255, 255))
+            start_label_rect = start_label.get_rect(center=self.start_button_rect.center)
+            screen.blit(start_label, start_label_rect)

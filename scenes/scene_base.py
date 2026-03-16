@@ -16,5 +16,9 @@ class SceneBase(ABC):
     def Render(self, screen):
         pass
 
+    def OnSceneExit(self):
+        pass
+
     def SwitchToScene(self, next_scene):
+        self.OnSceneExit()
         self.next = next_scene

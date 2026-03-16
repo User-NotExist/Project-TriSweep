@@ -1,6 +1,8 @@
 from pathlib import Path
 from jsonc_parser.parser import JsoncParser
 
+from components.chart import Chart
+
 class Song:
     def __init__(self, path_to_folder : Path):
         self.__path_to_folder = path_to_folder
@@ -12,6 +14,14 @@ class Song:
         except FileNotFoundError as e:
             print(e)
             return None
+        
+        for diff in self.__meta.get("difficulty", []):
+            try:
+                chart = Chart(diff)
+                self.__charts.append(chart)
+            except Exception as e:
+                print(f"Error loading chart for difficulty {diff.get('name', 'Unknown')}: {e}")
+                continue
 
         print(f"Loaded song: {self.title} by {self.artist}")
 
@@ -64,12 +74,12 @@ class Song:
         return float(self.__meta.get("previewDuration", 0.0))
 
     @property
-    def music_path(self) -> str:
-        return self.__meta.get("music_path", "")
+    def music_path(self) -> Path:
+        return self.__path_to_folder / self.__meta.get("music_path", "")
 
     @property
-    def jacket_path(self) -> str:
-        return self.__meta.get("jacket_path", "")
+    def jacket_path(self) -> Path:
+        return self.__path_to_folder / self.__meta.get("jacket_path", "")
 
     @property
     def difficulty(self) -> list:
@@ -92,7 +102,7 @@ class Song:
         return bool(self.__meta.get("hidden", False))
 
 if __name__ == "__main__":
-    song = Song(Path("D:\\UniProject\\TriSweep\\data\\songs\\THE RHYTHM SENSE TEST\\meta.jsonc"))
+    song = Song(Path("D:\\UniProject\\TriSweep\\data\\songs\\THE RHYTHM SENSE TEST"))
     print(f"Title: {song.title}")
     print(f"Artist: {song.artist}")
     print(f"BPM: {song.bpm}")

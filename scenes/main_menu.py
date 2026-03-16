@@ -49,8 +49,8 @@ class MainMenu(SceneBase):
 
     def _activate_button(self, key):
         if key == "play":
-            # Placeholder action until a gameplay scene is wired in.
-            print("Play button clicked")
+            from scenes.song_select import SongSelect
+            self.SwitchToScene(SongSelect())
         elif key == "setting":
             # Placeholder action until a settings scene is wired in.
             print("Setting button clicked")
