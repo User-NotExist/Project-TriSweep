@@ -1,0 +1,4 @@
+.idea/
+config.jsonc
+data/songs/
+**/__pycache__/
