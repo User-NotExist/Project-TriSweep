@@ -16,6 +16,8 @@ class Config:
     WINDOW_WIDTH = 900
     WINDOW_HEIGHT = 800
     FPS = 60
+    MUSIC_VOLUME = 0.8
+    SOUND_EFFECT_VOLUME = 0.8
 
     "Judgement Timing (ms)"
     CRITICAL_PERFECT_TIMING = 16
@@ -99,6 +101,7 @@ class Config:
         except Exception as e:
             print(f"Error loading config from {config_path}: {e}")
 
+    @classmethod
     def write_config(cls, config_path: Path):
         """
         Write the current config values to a JSONC file at `config_path`.

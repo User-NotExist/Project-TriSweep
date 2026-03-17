@@ -3,6 +3,7 @@ from pathlib import Path
 import pygame
 
 from components.song import Song
+from config import Config
 from scenes.scene_base import SceneBase
 
 EASY_COLOR = (52, 235, 58)
@@ -275,6 +276,7 @@ class SongSelect(SceneBase):
         try:
             if force_reload or self._preview_loaded_path != music_path:
                 pygame.mixer.music.load(str(music_path))
+                pygame.mixer.music.set_volume(Config.MUSIC_VOLUME)
                 self._preview_loaded_path = music_path
 
             pygame.mixer.music.play(loops=0, start=preview_start, fade_ms=self.preview_fade_in_ms)
