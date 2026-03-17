@@ -315,10 +315,10 @@ class SongSelect(SceneBase):
         chart = charts[self.selected_difficulty_index]
         print(f"Start clicked: {selected_song.title} [{chart.name} Lv.{chart.level}]")
 
-    def OnSceneExit(self):
+    def on_scene_exit(self):
         self._stop_preview()
 
-    def ProcessInput(self, events):
+    def process_input(self, events):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
@@ -356,9 +356,9 @@ class SongSelect(SceneBase):
 
                 if event.key == pygame.K_ESCAPE:
                     from scenes.main_menu import MainMenu
-                    self.SwitchToScene(MainMenu())
+                    self.switch_to_scene(MainMenu())
 
-    def Update(self):
+    def update(self):
         # Switch happens at end of frame in main loop; avoid preview restart after scene exit.
         if self.next is not self:
             return
@@ -555,7 +555,7 @@ class SongSelect(SceneBase):
         start_label = self.song_title_font.render("Start", True, (255, 255, 255))
         screen.blit(start_label, start_label.get_rect(center=self.start_button_rect.center))
 
-    def Render(self, screen):
+    def render(self, screen):
         width, height = screen.get_size()
         if (width, height) != self.layout_size:
             self._build_layout(width, height)

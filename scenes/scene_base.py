@@ -1,24 +1,25 @@
 from abc import ABC, abstractmethod
 
+
 class SceneBase(ABC):
     def __init__(self):
         self.next = self
 
     @abstractmethod
-    def ProcessInput(self, events):
+    def process_input(self, events):
         pass
 
     @abstractmethod
-    def Update(self):
+    def update(self):
         pass
 
     @abstractmethod
-    def Render(self, screen):
+    def render(self, screen):
         pass
 
-    def OnSceneExit(self):
+    def on_scene_exit(self):
         pass
 
-    def SwitchToScene(self, next_scene):
-        self.OnSceneExit()
+    def switch_to_scene(self, next_scene):
+        self.on_scene_exit()
         self.next = next_scene

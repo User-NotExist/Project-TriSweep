@@ -2,6 +2,7 @@ import pygame
 
 from scenes.scene_base import SceneBase
 
+
 class MainMenu(SceneBase):
     def __init__(self):
         super().__init__()
@@ -50,12 +51,13 @@ class MainMenu(SceneBase):
     def _activate_button(self, key):
         if key == "play":
             from scenes.song_select import SongSelect
-            self.SwitchToScene(SongSelect())
+
+            self.switch_to_scene(SongSelect())
         elif key == "setting":
             # Placeholder action until a settings scene is wired in.
             print("Setting button clicked")
 
-    def ProcessInput(self, events):
+    def process_input(self, events):
         for event in events:
             if event.type == pygame.MOUSEMOTION:
                 self.hovered_button = self._button_at_position(event.pos)
@@ -64,10 +66,10 @@ class MainMenu(SceneBase):
                 if clicked is not None:
                     self._activate_button(clicked)
 
-    def Update(self):
+    def update(self):
         pass
 
-    def Render(self, screen):
+    def render(self, screen):
         width, height = screen.get_size()
         if (width, height) != self.layout_size:
             self._build_layout(width, height)

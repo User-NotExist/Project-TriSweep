@@ -1,14 +1,15 @@
 from scenes.scene_base import SceneBase
 
+
 class Setting(SceneBase):
     def __init__(self):
         super().__init__()
 
-    def ProcessInput(self, events):
+    def process_input(self, events):
         pass
 
-    def Update(self):
+    def update(self):
         pass
 
-    def Render(self, screen):
+    def render(self, screen):
         pass
