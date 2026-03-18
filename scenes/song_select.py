@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pygame
+import math
 
 from components.song import Song
 from config import Config
@@ -10,9 +11,9 @@ EASY_COLOR = (52, 235, 58)
 ADVANCED_COLOR = (250, 165, 37)
 EXPERT_COLOR = (250, 41, 37)
 MASTER_COLOR = (237, 71, 255)
+FALLBACK_DIFF_COLOR = (194, 200, 214)
 
 SONG_ASSET_PATH = Path("./data/songs/")
-FALLBACK_DIFF_COLOR = (194, 200, 214)
 
 DIFFICULTY_COLORS = {
     "easy": EASY_COLOR,
@@ -130,6 +131,13 @@ class SongSelect(SceneBase):
     def _format_level(level):
         return f"{level:g}" if isinstance(level, (int, float)) else str(level)
 
+    @staticmethod
+    def _format_level_simple(level):
+        if not isinstance(level, (int, float)):
+            return SongSelect._format_level(level)
+
+        return f"{math.floor(level)}{'+' if level - math.floor(level) >= 0.5 else ''}"
+
     def _load_songs(self):
         if not SONG_ASSET_PATH.exists():
             print(f"Warning: Song asset path not found: {SONG_ASSET_PATH}")
@@ -182,7 +190,7 @@ class SongSelect(SceneBase):
 
         available_w = self.grid_area.width - (self.margin * 2) - (self.card_gap * (self.columns - 1))
         card_w = min(150, available_w // self.columns)
-        card_h = int(card_w * 1.7)
+        card_h = int(card_w * 1.6)
         self.card_size = (card_w, card_h)
         self.thumb_size = (card_w - 20, card_w - 20)
 
@@ -447,7 +455,7 @@ class SongSelect(SceneBase):
                     pygame.draw.rect(screen, (28, 34, 47), badge_rect, border_radius=6)
                     pygame.draw.rect(screen, badge_color, badge_rect, width=2, border_radius=6)
 
-                    level_surface = self.diff_font.render(self._format_level(chart.level), True, badge_color)
+                    level_surface = self.diff_font.render(self._format_level_simple(chart.level), True, badge_color)
                     level_rect = level_surface.get_rect(center=badge_rect.center)
                     screen.blit(level_surface, level_rect)
 
