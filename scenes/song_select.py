@@ -35,11 +35,14 @@ class SongSelect(SceneBase):
         self.subtle_text_color = (167, 176, 197)
 
         self.margin = 20
-        self.columns = 3
+        self.columns = 1
         self.sidebar_width = 300
         self.card_size = (180, 220)
         self.card_gap = 16
         self.thumb_size = (160, 160)
+        self.min_card_width = 180
+        self.max_card_width = 220
+        self.max_columns = 6
 
         self.selected_index = 0
         self.selected_difficulty_index = 0
@@ -138,6 +141,33 @@ class SongSelect(SceneBase):
 
         return f"{math.floor(level)}{'+' if level - math.floor(level) >= 0.5 else ''}"
 
+    @staticmethod
+    def _format_bpm(bpm):
+        try:
+            bpm_value = float(bpm)
+        except (TypeError, ValueError):
+            return "BPM --"
+
+        if bpm_value <= 0:
+            return "BPM --"
+        return f"BPM {bpm_value:g}"
+
+    @staticmethod
+    def _format_duration(seconds):
+        try:
+            total_seconds = int(float(seconds))
+        except (TypeError, ValueError):
+            return "--:--"
+
+        if total_seconds <= 0:
+            return "--:--"
+
+        minutes, secs = divmod(total_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours > 0:
+            return f"{hours}:{minutes:02}:{secs:02}"
+        return f"{minutes}:{secs:02}"
+
     def _load_songs(self):
         if not SONG_ASSET_PATH.exists():
             print(f"Warning: Song asset path not found: {SONG_ASSET_PATH}")
@@ -185,14 +215,23 @@ class SongSelect(SceneBase):
     def _build_layout(self, width, height):
         self.layout_size = (width, height)
 
-        self.sidebar_area = pygame.Rect(width - self.sidebar_width, 0, self.sidebar_width, height)
-        self.grid_area = pygame.Rect(0, 0, width - self.sidebar_width, height)
+        # Keep sidebar visible, but don't let it consume the full window on narrow sizes.
+        min_grid_width = self.margin * 2 + 1
+        max_sidebar_width = max(0, width - min_grid_width)
+        sidebar_width = min(self.sidebar_width, max_sidebar_width)
 
-        available_w = self.grid_area.width - (self.margin * 2) - (self.card_gap * (self.columns - 1))
-        card_w = min(150, available_w // self.columns)
+        self.sidebar_area = pygame.Rect(width - sidebar_width, 0, sidebar_width, height)
+        self.grid_area = pygame.Rect(0, 0, width - sidebar_width, height)
+
+        inner_grid_width = max(1, self.grid_area.width - (self.margin * 2))
+        columns_that_fit = (inner_grid_width + self.card_gap) // (self.min_card_width + self.card_gap)
+        self.columns = max(1, min(self.max_columns, columns_that_fit))
+
+        available_w = inner_grid_width - (self.card_gap * (self.columns - 1))
+        card_w = min(self.max_card_width, max(1, available_w // self.columns))
         card_h = int(card_w * 1.6)
         self.card_size = (card_w, card_h)
-        self.thumb_size = (card_w - 20, card_w - 20)
+        self.thumb_size = (max(1, card_w - 20), max(1, card_w - 20))
 
         self.song_card_rects = []
         top_y = self.margin + 52 - self.scroll_y
@@ -439,13 +478,28 @@ class SongSelect(SceneBase):
             )
             self._draw_looping_text(screen, song.artist, self.song_artist_font, self.subtle_text_color, artist_rect)
 
+            meta = song.raw_meta()
+            bpm_text = self._format_bpm(meta.get("bpm"))
+            duration_text = self._format_duration(meta.get("length"))
+            info_rect = pygame.Rect(
+                card_rect.x + 10,
+                artist_rect.bottom + 4,
+                card_rect.width - 20,
+                self.small_font.get_height(),
+            )
+
+            bpm_surface = self.small_font.render(bpm_text, True, self.subtle_text_color)
+            duration_surface = self.small_font.render(duration_text, True, self.subtle_text_color)
+            screen.blit(bpm_surface, (info_rect.left, info_rect.y))
+            screen.blit(duration_surface, duration_surface.get_rect(topright=(info_rect.right, info_rect.y)))
+
             charts = song.difficulty[:4]
             if charts:
                 badge_count = len(charts)
                 badge_gap = 6
                 badge_w = (card_rect.width - 20 - (badge_gap * (badge_count - 1))) // badge_count
                 badge_h = 22
-                badge_y = card_rect.bottom - 32
+                badge_y = max(info_rect.bottom + 8, card_rect.bottom - 32)
 
                 for diff_i, chart in enumerate(charts):
                     badge_x = card_rect.x + 10 + diff_i * (badge_w + badge_gap)
