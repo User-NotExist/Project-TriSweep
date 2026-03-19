@@ -1,0 +1,22 @@
+{
+    "PLAYER_SPEED": "float",
+    "PLAYER_NAME": "str",
+    "PLAYER_IMAGE_PATH": "str",
+    "WINDOW_WIDTH": "int",
+    "WINDOW_HEIGHT": "int",
+    "FPS": "int",
+    "MUSIC_VOLUME": "float",
+    "SOUND_EFFECT_VOLUME": "float",
+    "CRITICAL_PERFECT_TIMING": "int",
+    "PERFECT_TIMING": "int",
+    "GREAT_TIMING": "int",
+    "GOOD_TIMING": "int",
+    "EARLY_MISS_TIMING": "int",
+    "CRITICAL_PERFECT_SCORE": "int",
+    "PERFECT_SCORE": "int",
+    "GREAT_SCORE": "int",
+    "GOOD_SCORE": "int",
+    "OFFSET_MUSIC": "int",
+    "OFFSET_DISPLAY": "int"
+}
+
