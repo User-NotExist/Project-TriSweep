@@ -23,6 +23,10 @@ while running:
         else:
             filtered_events.append(event)
 
+    if active_scene == None:
+        running = False
+        break
+
     active_scene.process_input(filtered_events)
     active_scene.update()
     active_scene.render(screen)

@@ -18,13 +18,14 @@ class MainMenu(SceneBase):
 
         self.button_size = (240, 58)
         self.button_gap = 16
-        self.button_order = [("play", "Play"), ("setting", "Setting")]
+        self.button_order = [("play", "Play"), ("setting", "Setting"), ("exit", "Exit")]
 
         self.title_surface = None
         self.title_rect = pygame.Rect(0, 0, 0, 0)
         self.button_rects = {
             "play": pygame.Rect(0, 0, 0, 0),
             "setting": pygame.Rect(0, 0, 0, 0),
+            "exit": pygame.Rect(0, 0, 0, 0),
         }
         self.hovered_button = None
         self.layout_size = (0, 0)
@@ -54,8 +55,12 @@ class MainMenu(SceneBase):
 
             self.switch_to_scene(SongSelect())
         elif key == "setting":
-            # Placeholder action until a settings scene is wired in.
-            print("Setting button clicked")
+            from scenes.setting import Setting
+
+            self.switch_to_scene(Setting())
+        elif key == "exit":
+            print("Goodbye!")
+            self.switch_to_scene(None)
 
     def process_input(self, events):
         for event in events:
