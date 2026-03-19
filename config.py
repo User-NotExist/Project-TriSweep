@@ -47,6 +47,7 @@ class Config:
     BASE_DIR = Path(__file__).resolve().parent
     CONFIG_PATH = BASE_DIR / "config.jsonc"
     CONFIG_TYPE_PATH = BASE_DIR / "config_type.jsonc"
+    _NON_CONFIG_KEYS = {"BASE_DIR", "CONFIG_PATH", "CONFIG_TYPE_PATH"}
 
     @classmethod
     def _resolve_path(cls, path_value, default_path: Path) -> Path:
@@ -77,7 +78,13 @@ class Config:
     def _config_fields(cls):
         return {
             name: val for name, val in vars(cls).items()
-            if name.isupper() and not callable(val) and not name.startswith("__") and not name.startswith("_")
+            if (
+                name.isupper()
+                and not callable(val)
+                and not name.startswith("__")
+                and not name.startswith("_")
+                and name not in cls._NON_CONFIG_KEYS
+            )
         }
 
     @classmethod
@@ -338,5 +345,6 @@ if __name__ == "__main__":
             and not callable(getattr(Config, name))
             and not name.startswith("__")
             and not name.startswith("_")
+            and name not in Config._NON_CONFIG_KEYS
         ):
             print(f"{name}: {getattr(Config, name)} {type(getattr(Config, name)).__name__}")
