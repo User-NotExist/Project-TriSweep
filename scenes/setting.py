@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import pygame
 
 from config import Config
-from scenes.scene_base import SceneBase
+from components.scene_base import SceneBase
 
 
 @dataclass

@@ -9,7 +9,8 @@ class Config:
     """
 
     "Player"
-    PLAYER_SPEED = 9.0
+    PLAYER_MOVE_SPEED = 1.0
+    PLAYER_LANE_SPEED = 9.0
     PLAYER_NAME = "GUEST"
     PLAYER_IMAGE_PATH = "./guest_player.png"
 

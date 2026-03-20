@@ -1,6 +1,6 @@
 import pygame
 
-from scenes.scene_base import SceneBase
+from components.scene_base import SceneBase
 
 
 class MainMenu(SceneBase):

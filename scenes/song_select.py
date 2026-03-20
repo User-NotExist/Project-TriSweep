@@ -1,11 +1,10 @@
-from pathlib import Path
-
 import pygame
 import math
 
+from pathlib import Path
 from components.song import Song
 from config import Config
-from scenes.scene_base import SceneBase
+from components.scene_base import SceneBase
 
 EASY_COLOR = (52, 235, 58)
 ADVANCED_COLOR = (250, 165, 37)
