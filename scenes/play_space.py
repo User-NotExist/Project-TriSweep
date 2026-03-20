@@ -3,9 +3,9 @@ from components.player import Player
 from config import Config
 import pygame
 
-LANE_0_KEY = [pygame.K_a, pygame.K_KP_4]
-LANE_1_KEY = [pygame.K_s, pygame.K_KP_5]
-LANE_2_KEY = [pygame.K_d, pygame.K_KP_6]
+LANE_0_KEY = [pygame.K_q, pygame.K_i]
+LANE_1_KEY = [pygame.K_w, pygame.K_o]
+LANE_2_KEY = [pygame.K_e, pygame.K_p]
 
 class PlaySpace(SceneBase):
     def __init__(self):
@@ -55,6 +55,7 @@ class PlaySpace(SceneBase):
             if event.type == pygame.MOUSEMOTION:
                 self._player.apply_mouse_delta(event.rel[0], Config.PLAYER_MOVE_SPEED)
             elif event.type == pygame.KEYDOWN:
+                # print(event.key)
                 for lane_index, lane_key_group in enumerate(self._lane_keys):
                     for lane_key in lane_key_group:
                         if event.key != lane_key:
@@ -63,6 +64,7 @@ class PlaySpace(SceneBase):
                         self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
                         break
             elif event.type == pygame.KEYUP:
+                # print(event.key)
                 for lane_index, lane_key_group in enumerate(self._lane_keys):
                     for lane_key in lane_key_group:
                         if event.key != lane_key:
