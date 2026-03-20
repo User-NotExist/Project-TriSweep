@@ -3,10 +3,6 @@ from components.player import Player
 from config import Config
 import pygame
 
-LANE_0_KEY = [pygame.K_q, pygame.K_i]
-LANE_1_KEY = [pygame.K_w, pygame.K_o]
-LANE_2_KEY = [pygame.K_e, pygame.K_p]
-
 class PlaySpace(SceneBase):
     def __init__(self):
         super().__init__()
@@ -29,12 +25,55 @@ class PlaySpace(SceneBase):
         self._judgement_line_y_pos = 150
         self._player = Player()
         self._is_player_x_initialized = False
-        self._lane_keys = [LANE_0_KEY, LANE_1_KEY, LANE_2_KEY]
+        self._lane_keys = self._build_lane_key_groups()
+        self._lane_key_to_lane_index = self._build_lane_key_map(self._lane_keys)
         self._lane_pressed = [False, False, False]
         self._lane_held_keys = [set() for _ in range(self._lane_count)]
 
         #pygame.mouse.set_visible(False)
         #pygame.event.set_grab(True)
+
+    @staticmethod
+    def _resolve_keycode(key_name, fallback_keycode):
+        try:
+            normalized = str(key_name).strip().lower()
+            return pygame.key.key_code(normalized)
+        except Exception:
+            return fallback_keycode
+
+    def _build_lane_key_groups(self):
+        key_name_groups = [
+            (Config.LANE_0_KEY_0, Config.LANE_0_KEY_1),
+            (Config.LANE_1_KEY_0, Config.LANE_1_KEY_1),
+            (Config.LANE_2_KEY_0, Config.LANE_2_KEY_1),
+        ]
+        fallback_groups = [
+            (pygame.K_q, pygame.K_i),
+            (pygame.K_w, pygame.K_o),
+            (pygame.K_e, pygame.K_p),
+        ]
+
+        lane_key_groups = []
+        for lane_index in range(self._lane_count):
+            resolved_group = []
+            for key_index in range(2):
+                resolved_group.append(
+                    self._resolve_keycode(
+                        key_name_groups[lane_index][key_index],
+                        fallback_groups[lane_index][key_index],
+                    )
+                )
+            lane_key_groups.append(resolved_group)
+        return lane_key_groups
+
+    @staticmethod
+    def _build_lane_key_map(lane_key_groups):
+        key_to_lane = {}
+        for lane_index, key_group in enumerate(lane_key_groups):
+            for keycode in key_group:
+                if keycode not in key_to_lane:
+                    key_to_lane[keycode] = lane_index
+        return key_to_lane
 
     def process_input(self, events):
         surface = pygame.display.get_surface()
@@ -55,23 +94,15 @@ class PlaySpace(SceneBase):
             if event.type == pygame.MOUSEMOTION:
                 self._player.apply_mouse_delta(event.rel[0], Config.PLAYER_MOVE_SPEED)
             elif event.type == pygame.KEYDOWN:
-                # print(event.key)
-                for lane_index, lane_key_group in enumerate(self._lane_keys):
-                    for lane_key in lane_key_group:
-                        if event.key != lane_key:
-                            continue
-                        self._lane_held_keys[lane_index].add(lane_key)
-                        self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
-                        break
+                lane_index = self._lane_key_to_lane_index.get(event.key)
+                if lane_index is not None:
+                    self._lane_held_keys[lane_index].add(event.key)
+                    self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
             elif event.type == pygame.KEYUP:
-                # print(event.key)
-                for lane_index, lane_key_group in enumerate(self._lane_keys):
-                    for lane_key in lane_key_group:
-                        if event.key != lane_key:
-                            continue
-                        self._lane_held_keys[lane_index].discard(lane_key)
-                        self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
-                        break
+                lane_index = self._lane_key_to_lane_index.get(event.key)
+                if lane_index is not None:
+                    self._lane_held_keys[lane_index].discard(event.key)
+                    self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
 
     def update(self):
         pass

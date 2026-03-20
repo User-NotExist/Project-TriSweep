@@ -96,6 +96,8 @@ class Setting(SceneBase):
 
     @staticmethod
     def _section_for_key(key):
+        if key.startswith("LANE_") and "_KEY_" in key:
+            return "Lane Input"
         if key.startswith("PLAYER_"):
             return "Player"
         if key.startswith("WINDOW_") or key in {"FPS", "MUSIC_VOLUME", "SOUND_EFFECT_VOLUME"}:
@@ -133,6 +135,8 @@ class Setting(SceneBase):
 
     @staticmethod
     def _control_hint(item):
+        if item.key.startswith("LANE_") and "_KEY_" in item.key:
+            return "Enter, then press any key to bind"
         if item.control == "text":
             return "Enter to type"
         if item.control in {"number", "slider"}:
@@ -140,6 +144,57 @@ class Setting(SceneBase):
         if item.control == "toggle":
             return "Space to toggle"
         return ""
+
+    @staticmethod
+    def _is_lane_key_config_key(key):
+        return key.startswith("LANE_") and "_KEY_" in key
+
+    @staticmethod
+    def _lane_index_from_key(key):
+        try:
+            return int(key.split("_")[1])
+        except Exception:
+            return None
+
+    def _validate_dirty_lane_bindings(self):
+        dirty_lane_keys = [key for key in self.dirty_keys if self._is_lane_key_config_key(key)]
+        if not dirty_lane_keys:
+            return True
+
+        invalid_entries = []
+        keycode_entries = {}
+
+        for key in dirty_lane_keys:
+            raw_value = self.pending_values.get(key, "")
+            key_name = str(raw_value).strip().lower()
+            lane_index = self._lane_index_from_key(key)
+
+            try:
+                keycode = pygame.key.key_code(key_name)
+            except Exception:
+                invalid_entries.append(f"{key}='{raw_value}'")
+                continue
+
+            keycode_entries.setdefault(keycode, []).append((key, lane_index, key_name))
+
+        if invalid_entries:
+            self.status_message = "Invalid lane key name(s): " + ", ".join(invalid_entries)
+            self.status_tone = "warning"
+            return False
+
+        duplicate_groups = []
+        for keycode, entries in keycode_entries.items():
+            lanes = {lane for _, lane, _ in entries if lane is not None}
+            if len(entries) > 1 and len(lanes) > 1:
+                binding_names = ", ".join(key for key, _, _ in entries)
+                duplicate_groups.append(f"{binding_names} -> '{pygame.key.name(keycode)}'")
+
+        if duplicate_groups:
+            self.status_message = "Lane key conflict(s): " + "; ".join(duplicate_groups)
+            self.status_tone = "warning"
+            return False
+
+        return True
 
     def _set_status_for_selected(self):
         if not self.items or self.editing_key is not None:
@@ -306,7 +361,10 @@ class Setting(SceneBase):
         self.edit_buffer = str(self.pending_values[item.key])
         pygame.key.start_text_input()
         self.caret_visible = True
-        self.status_message = f"Editing {item.label}. Enter to apply, Esc to cancel."
+        if self._is_lane_key_config_key(item.key):
+            self.status_message = f"Editing {item.label}. Press a key to bind, Esc to cancel."
+        else:
+            self.status_message = f"Editing {item.label}. Enter to apply, Esc to cancel."
         self.status_tone = "warning"
 
     def _commit_text_edit(self):
@@ -349,6 +407,9 @@ class Setting(SceneBase):
         if not self.dirty_keys:
             self.status_message = "No pending changes."
             self.status_tone = "info"
+            return
+
+        if not self._validate_dirty_lane_bindings():
             return
 
         updated_count = 0
@@ -431,11 +492,21 @@ class Setting(SceneBase):
                 self._set_slider_from_mouse(self.dragging_slider_key, event.pos[0])
 
             elif event.type == pygame.TEXTINPUT and self.editing_key is not None:
+                if self._is_lane_key_config_key(self.editing_key):
+                    continue
                 if len(self.edit_buffer) < 128:
                     self.edit_buffer += event.text
 
             elif event.type == pygame.KEYDOWN:
                 if self.editing_key is not None:
+                    if self._is_lane_key_config_key(self.editing_key):
+                        if event.key == pygame.K_ESCAPE:
+                            self._cancel_text_edit()
+                        else:
+                            self.edit_buffer = pygame.key.name(event.key)
+                            self._commit_text_edit()
+                        continue
+
                     if event.key == pygame.K_RETURN:
                         self._commit_text_edit()
                     elif event.key == pygame.K_ESCAPE:

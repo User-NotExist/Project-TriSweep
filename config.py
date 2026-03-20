@@ -14,6 +14,14 @@ class Config:
     PLAYER_NAME = "GUEST"
     PLAYER_IMAGE_PATH = "./guest_player.png"
 
+    "Key Settings"
+    LANE_0_KEY_0 = "q"
+    LANE_0_KEY_1 = "i"
+    LANE_1_KEY_0 = "w"
+    LANE_1_KEY_1 = "o"
+    LANE_2_KEY_0 = "e"
+    LANE_2_KEY_1 = "p"
+
     "Program"
     WINDOW_WIDTH = 900
     WINDOW_HEIGHT = 800
@@ -34,7 +42,7 @@ class Config:
     GREAT_SCORE = 80
     GOOD_SCORE = 50
 
-    "Offset Setting (tick)"
+    "Offset Setting (ms)"
     OFFSET_MUSIC = 0
     OFFSET_DISPLAY = 0
 
