@@ -5,18 +5,23 @@ from scenes.main_menu import MainMenu
 import pygame
 import argparse
 
+parser = argparse.ArgumentParser(description="TriSweep")
+parser.add_argument("--game", type=bool, default=False, help="Force game to boot to game scene")
+parser.add_argument("--fullscreen", type=bool, default=False, help="Force game screen size to fullscreen")
+args = parser.parse_args()
+
 CONFIG_PATH = Path("./config.jsonc")
 
 Config.load_config(CONFIG_PATH)
 
 pygame.init()
-screen = pygame.display.set_mode((Config.WINDOW_WIDTH, Config.WINDOW_HEIGHT))
+
+if not args.fullscreen:
+    screen = pygame.display.set_mode((Config.WINDOW_WIDTH, Config.WINDOW_HEIGHT))
+else:
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 clock = pygame.time.Clock()
 pygame.display.set_caption("TriSweep")
-
-parser = argparse.ArgumentParser(description="TriSweep")
-parser.add_argument("--game", type=bool, default=False, help="Force game to boot to game scene")
-args = parser.parse_args()
 
 if not args.game:
     active_scene = MainMenu()
