@@ -1,11 +1,12 @@
 from components.scene_base import SceneBase
-from components.player import Player
+from components.game_manager import GameManager
 from config import Config
 import pygame
 
 class PlaySpace(SceneBase):
-    def __init__(self):
+    def __init__(self, game_manager: GameManager):
         super().__init__()
+        self._game_manager = game_manager
 
         # Visual constants for the lane field.
         self._lane_count = 3
@@ -23,7 +24,6 @@ class PlaySpace(SceneBase):
         self._lane_glow_peak_alpha = 95
         # Offset from bottom to the TOP edge of the judgement line.
         self._judgement_line_y_pos = 150
-        self._player = Player()
         self._is_player_x_initialized = False
         self._lane_keys = self._build_lane_key_groups()
         self._lane_key_to_lane_index = self._build_lane_key_map(self._lane_keys)
@@ -83,16 +83,17 @@ class PlaySpace(SceneBase):
         screen_width, _ = surface.get_size()
         total_width = self._lane_count * self._lane_width + (self._lane_count - 1) * self._lane_gap
         start_x = (screen_width - total_width) // 2
-        player_half_width = int(self._lane_width * Player.SPRITE_WIDTH_RATIO) / 2
+        player = self._game_manager.player
+        player_half_width = int(self._lane_width * player.SPRITE_WIDTH_RATIO) / 2
 
-        self._player.set_movement_bounds(start_x + player_half_width, start_x + total_width - player_half_width)
+        player.set_movement_bounds(start_x + player_half_width, start_x + total_width - player_half_width)
         if not self._is_player_x_initialized:
-            self._player.set_x_position(start_x + (total_width // 2))
+            player.set_x_position(start_x + (total_width // 2))
             self._is_player_x_initialized = True
 
         for event in events:
             if event.type == pygame.MOUSEMOTION:
-                self._player.apply_mouse_delta(event.rel[0], Config.PLAYER_MOVE_SPEED)
+                player.apply_mouse_delta(event.rel[0], Config.PLAYER_MOVE_SPEED)
             elif event.type == pygame.KEYDOWN:
                 lane_index = self._lane_key_to_lane_index.get(event.key)
                 if lane_index is not None:
@@ -149,14 +150,15 @@ class PlaySpace(SceneBase):
             self._judgement_line_width,
         )
 
-        player_half_width = int(self._lane_width * Player.SPRITE_WIDTH_RATIO) / 2
-        self._player.set_movement_bounds(start_x + player_half_width, start_x + total_width - player_half_width)
+        player = self._game_manager.player
+        player_half_width = int(self._lane_width * player.SPRITE_WIDTH_RATIO) / 2
+        player.set_movement_bounds(start_x + player_half_width, start_x + total_width - player_half_width)
         if not self._is_player_x_initialized:
-            self._player.set_x_position(start_x + (total_width // 2))
+            player.set_x_position(start_x + (total_width // 2))
             self._is_player_x_initialized = True
 
-        sprite_width_px = self._player.sprite_pixel_size[0]
-        player_center_x = int(self._player.x_position)
+        sprite_width_px = player.sprite_pixel_size[0]
+        player_center_x = int(player.x_position)
         player_space_start_x = player_center_x - (sprite_width_px // 2)
         player_space_end_x = player_space_start_x + sprite_width_px
         pygame.draw.line(
@@ -167,7 +169,7 @@ class PlaySpace(SceneBase):
             self._judgement_line_width,
         )
 
-        self._player.render(screen, self._lane_width, judgement_y + (self._player.sprite_pixel_size[0] // 2))
+        player.render(screen, self._lane_width, judgement_y + (player.sprite_pixel_size[0] // 2))
 
 
     def on_scene_exit(self):

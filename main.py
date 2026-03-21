@@ -27,7 +27,8 @@ if not args.game:
     active_scene = MainMenu()
 else:
     from scenes.play_space import PlaySpace
-    active_scene = PlaySpace()
+    from components.game_manager import GameManager
+    active_scene = PlaySpace(GameManager())
 
 running = True
 

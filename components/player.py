@@ -15,6 +15,7 @@ class Player:
         self._max_x = 0.0
         self._sprite_pixel_size = (0, 0)
         self._load_base_surface()
+        self._health = 100
 
     @property
     def x_position(self) -> float:
@@ -79,3 +80,13 @@ class Player:
         sprite_rect.centerx = int(self._x_position)
         sprite_rect.centery = judgement_line_y
         screen.blit(sprite, sprite_rect)
+
+    def apply_damage(self, damage: int):
+        self._health -= damage
+
+    def apply_heal(self, heal: int):
+        self._health += heal
+
+    @property
+    def health(self) -> int:
+        return self._health

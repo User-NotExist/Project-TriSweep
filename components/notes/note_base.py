@@ -1,3 +1,7 @@
+from components.local_enum.judgement_level import JudgementLevel
+from config import Config
+
+
 class NoteBase:
     """
     Lightweight note model consumed by PlaySpace drawing code.
@@ -33,6 +37,9 @@ class NoteBase:
         self._validate_time_range()
 
         self.color_override = self._coerce_color_override(color_override)
+
+        self.base_score = 0
+        self.bonus_score = 0
 
     @property
     def is_valid(self):
@@ -121,5 +128,49 @@ class NoteBase:
         self.validation_errors.append(f"Invalid color_override: {color_override}; using default color")
         return None
 
-    def draw_note(self, width, note_speed):
-        print("Oh, you havent implement draw_note yet.")
+    def draw_note(self, width, note_speed, **kwargs):
+        """
+                Return a solid rectangle note surface.
+
+                Parameters
+                ----------
+                width: int
+                    Render width in pixels, typically lane width.
+                note_speed: float
+                    Reserved for cross-note API consistency.
+                kwargs:
+                    note_height (int): explicit note height in px.
+                    min_height (int): floor for computed height.
+                    height_scale (float): multiplier for speed-based height.
+                """
+        note_width = max(1, int(width))
+        min_height = max(1, int(kwargs.get("min_height", 18)))
+        note_speed_px_per_ms = abs(float(note_speed)) / 1000.0
+
+        if self.is_long:
+            # Bottom is aligned to start_stamp by PlaySpace, so long-note top reaches end_stamp.
+            duration_height = int(self.duration_ms * note_speed_px_per_ms)
+            note_height = max(min_height, duration_height)
+        else:
+            explicit_height = kwargs.get("note_height")
+            if explicit_height is not None:
+                note_height = max(1, int(explicit_height))
+            else:
+                height_scale = float(kwargs.get("height_scale", 0.2))
+                computed_height = int(abs(float(note_speed)) * height_scale)
+                note_height = max(min_height, computed_height)
+
+        note_surface = pygame.Surface((note_width, note_height), pygame.SRCALPHA)
+        note_surface.fill(self.resolved_color())
+        return note_surface
+
+    def get_score(self, judgement: JudgementLevel, **kwargs):
+        match judgement:
+            case JudgementLevel.CRITPERFECT:
+                return (self.base_score * Config.CRITICAL_PERFECT_SCORE) + self.bonus_score
+            case JudgementLevel.PERFECT:
+                return (self.base_score * Config.PERFECT_SCORE)
+            case JudgementLevel.GREAT:
+                return (self.base_score * Config.GREAT_SCORE)
+            case JudgementLevel.GOOD:
+                return (self.base_score * Config.GOOD_SCORE)
