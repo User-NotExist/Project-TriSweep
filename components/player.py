@@ -84,8 +84,14 @@ class Player:
     def apply_damage(self, damage: int):
         self._health -= damage
 
+        if self._health < 0:
+            self._health = 0
+
     def apply_heal(self, heal: int):
         self._health += heal
+
+        if self._health > 100:
+            self._health = 100
 
     @property
     def health(self) -> int:

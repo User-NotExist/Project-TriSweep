@@ -22,6 +22,13 @@ class PlaySpace(SceneBase):
         self._lane_glow_color = (120, 255, 180)
         self._lane_glow_radius = 180
         self._lane_glow_peak_alpha = 95
+        self._health_bar_width = 16
+        self._health_bar_gap = 14
+        self._health_bar_border_color = (215, 223, 235)
+        self._health_bar_bg_color = (42, 48, 58)
+        self._health_bar_green = (68, 224, 112)
+        self._health_bar_yellow = (245, 210, 72)
+        self._health_bar_red = (236, 78, 78)
         # Offset from bottom to the TOP edge of the judgement line.
         self._judgement_line_y_pos = 150
         self._is_player_x_initialized = False
@@ -125,6 +132,27 @@ class PlaySpace(SceneBase):
 
         screen.blit(glow_surface, (lane_x, 0))
 
+    def _draw_health_bar(self, screen, start_x, player_health):
+        bar_height = max(1, screen.get_height())
+        bar_x = start_x - self._health_bar_gap - self._health_bar_width
+        bar_rect = pygame.Rect(bar_x, 0, self._health_bar_width, bar_height)
+
+        health_value = max(0, min(100, int(player_health)))
+        fill_height = int((health_value / 100) * bar_height)
+        fill_rect = pygame.Rect(bar_rect.x, bar_rect.bottom - fill_height, bar_rect.width, fill_height)
+
+        if health_value > 60:
+            fill_color = self._health_bar_green
+        elif health_value > 30:
+            fill_color = self._health_bar_yellow
+        else:
+            fill_color = self._health_bar_red
+
+        pygame.draw.rect(screen, self._health_bar_bg_color, bar_rect)
+        if fill_height > 0:
+            pygame.draw.rect(screen, fill_color, fill_rect)
+        pygame.draw.rect(screen, self._health_bar_border_color, bar_rect, 2)
+
     def render(self, screen):
         screen.fill(self._background_color)
 
@@ -151,6 +179,7 @@ class PlaySpace(SceneBase):
         )
 
         player = self._game_manager.player
+        self._draw_health_bar(screen, start_x, player.health)
         player_half_width = int(self._lane_width * player.SPRITE_WIDTH_RATIO) / 2
         player.set_movement_bounds(start_x + player_half_width, start_x + total_width - player_half_width)
         if not self._is_player_x_initialized:
