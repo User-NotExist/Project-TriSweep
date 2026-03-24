@@ -18,11 +18,12 @@
     "PERFECT_TIMING": "int",
     "GREAT_TIMING": "int",
     "GOOD_TIMING": "int",
-    "EARLY_MISS_TIMING": "int",
+    "MISS_TIMING": "int",
     "CRITICAL_PERFECT_SCORE": "int",
     "PERFECT_SCORE": "int",
     "GREAT_SCORE": "int",
     "GOOD_SCORE": "int",
+    "SCORE_DISPLAY_DECREASING": "bool",
     "OFFSET_MUSIC": "int",
     "OFFSET_DISPLAY": "int"
 }

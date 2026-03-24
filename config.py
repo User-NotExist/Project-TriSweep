@@ -34,13 +34,14 @@ class Config:
     PERFECT_TIMING = 50
     GREAT_TIMING = 100
     GOOD_TIMING = 150
-    EARLY_MISS_TIMING = 200
+    MISS_TIMING = 200
 
     "Judgement Score (%)"
     CRITICAL_PERFECT_SCORE = 100
     PERFECT_SCORE = 100
     GREAT_SCORE = 80
     GOOD_SCORE = 50
+    SCORE_DISPLAY_DECREASING = False
 
     "Offset Setting (ms)"
     OFFSET_MUSIC = 0

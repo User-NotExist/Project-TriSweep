@@ -45,6 +45,11 @@ class PlaySpace(SceneBase):
         self._countdown_message_text = "Get Ready"
         self._start_flash_duration_ms = 450
         self._start_flash_text = "Good luck!"
+        self._hud_score_font = self._create_countdown_font(30)
+        self._hud_judgement_font = self._create_countdown_font(24)
+        self._hud_margin = 16
+        self._hud_score_font.set_bold(True)
+        self._hud_judgement_font.set_bold(True)
 
         #pygame.mouse.set_visible(False)
         #pygame.event.set_grab(True)
@@ -169,19 +174,31 @@ class PlaySpace(SceneBase):
             player.set_x_position(start_x + (total_width // 2))
             self._is_player_x_initialized = True
 
+        lane_trigger_counts = [0 for _ in range(self._lane_count)]
+
         for event in events:
             if event.type == pygame.MOUSEMOTION:
                 player.apply_mouse_delta(event.rel[0], Config.PLAYER_MOVE_SPEED)
             elif event.type == pygame.KEYDOWN:
                 lane_index = self._lane_key_to_lane_index.get(event.key)
                 if lane_index is not None:
+                    was_key_held = event.key in self._lane_held_keys[lane_index]
                     self._lane_held_keys[lane_index].add(event.key)
+                    if not was_key_held:
+                        lane_trigger_counts[lane_index] += 1
                     self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
             elif event.type == pygame.KEYUP:
                 lane_index = self._lane_key_to_lane_index.get(event.key)
                 if lane_index is not None:
                     self._lane_held_keys[lane_index].discard(event.key)
                     self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
+
+        if self._is_game_started:
+            self._game_manager.process_input(
+                self._lane_pressed,
+                self._lane_held_keys,
+                lane_trigger_counts,
+            )
 
     def update(self):
         pass
@@ -228,6 +245,62 @@ class PlaySpace(SceneBase):
         if fill_height > 0:
             pygame.draw.rect(screen, fill_color, fill_rect)
         pygame.draw.rect(screen, self._health_bar_border_color, bar_rect, 2)
+
+    def _draw_top_hud(self, screen):
+        if bool(Config.SCORE_DISPLAY_DECREASING):
+            display_score = int(self._game_manager.decreasing_display_score)
+        else:
+            display_score = int(self._game_manager.current_score)
+
+        score_text = f"Score: {display_score / 10000:.4f}%"
+        score_surface = self._hud_score_font.render(score_text, True, (245, 248, 255))
+        score_shadow = self._hud_score_font.render(score_text, True, (0, 0, 0))
+
+        score_rect = score_surface.get_rect(midtop=(screen.get_width() // 2, self._hud_margin))
+        screen.blit(score_shadow, (score_rect.x + 2, score_rect.y + 2))
+        screen.blit(score_surface, score_rect)
+
+        last_payload = self._game_manager.last_judgement_payload
+        if last_payload is None:
+            judgement_text = "Judgement: -"
+            judgement_color = (210, 216, 230)
+        else:
+            judgement = last_payload.get("judgement")
+            judgement_name = judgement.name if hasattr(judgement, "name") else str(judgement)
+            hit_error_ms = last_payload.get("hit_error_ms")
+            if hit_error_ms is None:
+                timing_text = ""
+            else:
+                hit_error_ms = int(hit_error_ms)
+                abs_ms = abs(hit_error_ms)
+                if hit_error_ms < 0:
+                    timing_text = f"  FAST {abs_ms}ms"
+                elif hit_error_ms > 0:
+                    timing_text = f"  LATE {abs_ms}ms"
+                else:
+                    timing_text = "  ON TIME"
+            judgement_text = f"{judgement_name}{timing_text}"
+
+            judgement_color_map = {
+                "CRITPERFECT": (255, 225, 110),
+                "PERFECT": (150, 235, 255),
+                "GREAT": (120, 230, 175),
+                "GOOD": (240, 205, 95),
+                "MISS": (255, 110, 110),
+            }
+            judgement_color = judgement_color_map.get(judgement_name, (235, 238, 245))
+
+        judgement_surface = self._hud_judgement_font.render(judgement_text, True, judgement_color)
+        judgement_shadow = self._hud_judgement_font.render(judgement_text, True, (0, 0, 0))
+        judgement_rect = judgement_surface.get_rect(
+            midtop=(
+                screen.get_width() // 2,
+                score_rect.bottom + 6,
+            )
+        )
+
+        screen.blit(judgement_shadow, (judgement_rect.x + 2, judgement_rect.y + 2))
+        screen.blit(judgement_surface, judgement_rect)
 
     def render(self, screen):
         screen.fill(self._background_color)
@@ -300,6 +373,9 @@ class PlaySpace(SceneBase):
             self._draw_countdown_overlay(screen, countdown_seconds)
         elif not self._is_game_started and self._is_start_flash_active():
             self._draw_start_flash_overlay(screen)
+
+        # Keep HUD text on top of all scene visuals/overlays.
+        self._draw_top_hud(screen)
 
 
     def on_scene_exit(self):

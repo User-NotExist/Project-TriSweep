@@ -106,6 +106,8 @@ class Setting(SceneBase):
             return "Offset"
         if key.endswith("_TIMING"):
             return "Timing (ms)"
+        if key.startswith("SCORE_DISPLAY"):
+            return "Score (%)"
         if key.endswith("_SCORE"):
             return "Score (%)"
         return "Other"
