@@ -20,6 +20,7 @@ class PlaySpace(SceneBase):
         self._player_space_line_color = (80, 220, 120)
         self._judgement_line_width = 5
         self._lane_glow_color = (120, 255, 180)
+        self._lane_glow_dual_color = (90, 170, 255)
         self._lane_glow_radius = 180
         self._lane_glow_peak_alpha = 95
         self._health_bar_width = 16
@@ -36,6 +37,14 @@ class PlaySpace(SceneBase):
         self._lane_key_to_lane_index = self._build_lane_key_map(self._lane_keys)
         self._lane_pressed = [False, False, False]
         self._lane_held_keys = [set() for _ in range(self._lane_count)]
+        self._is_game_started = False
+        self._countdown_duration_ms = 3000
+        self._countdown_start_ms = pygame.time.get_ticks()
+        self._countdown_font = self._create_countdown_font(170)
+        self._countdown_message_font = self._create_countdown_font(42)
+        self._countdown_message_text = "Get Ready"
+        self._start_flash_duration_ms = 450
+        self._start_flash_text = "Good luck!"
 
         #pygame.mouse.set_visible(False)
         #pygame.event.set_grab(True)
@@ -82,6 +91,68 @@ class PlaySpace(SceneBase):
                     key_to_lane[keycode] = lane_index
         return key_to_lane
 
+    @staticmethod
+    def _create_countdown_font(size):
+        candidates = ["segoe ui", "arial", "verdana"]
+        for name in candidates:
+            font_path = pygame.font.match_font(name)
+            if font_path:
+                return pygame.font.Font(font_path, size)
+        return pygame.font.SysFont(None, size)
+
+    def _get_countdown_seconds_remaining(self):
+        elapsed_ms = pygame.time.get_ticks() - self._countdown_start_ms
+        remaining_ms = self._countdown_duration_ms - elapsed_ms
+        if remaining_ms <= 0:
+            return 0
+        return (remaining_ms + 999) // 1000
+
+    def _is_start_flash_active(self):
+        elapsed_ms = pygame.time.get_ticks() - self._countdown_start_ms
+        after_countdown_ms = elapsed_ms - self._countdown_duration_ms
+        return 0 <= after_countdown_ms < self._start_flash_duration_ms
+
+    def _is_countdown_and_flash_complete(self):
+        elapsed_ms = pygame.time.get_ticks() - self._countdown_start_ms
+        return elapsed_ms >= (self._countdown_duration_ms + self._start_flash_duration_ms)
+
+    def _draw_countdown_overlay(self, screen, seconds_left):
+        countdown_text = str(seconds_left)
+        text_surface = self._countdown_font.render(countdown_text, True, (255, 255, 255))
+        shadow_surface = self._countdown_font.render(countdown_text, True, (0, 0, 0))
+        message_surface = self._countdown_message_font.render(
+            self._countdown_message_text,
+            True,
+            (235, 240, 252),
+        )
+        message_shadow_surface = self._countdown_message_font.render(
+            self._countdown_message_text,
+            True,
+            (0, 0, 0),
+        )
+
+        text_rect = text_surface.get_rect(center=screen.get_rect().center)
+        shadow_rect = shadow_surface.get_rect(center=(text_rect.centerx + 4, text_rect.centery + 4))
+        message_rect = message_surface.get_rect(midbottom=(text_rect.centerx, text_rect.top - 10))
+        message_shadow_rect = message_shadow_surface.get_rect(
+            midbottom=(message_rect.centerx + 2, message_rect.centery + 2)
+        )
+
+        screen.blit(message_shadow_surface, message_shadow_rect)
+        screen.blit(message_surface, message_rect)
+        screen.blit(shadow_surface, shadow_rect)
+        screen.blit(text_surface, text_rect)
+
+    def _draw_start_flash_overlay(self, screen):
+        flash_surface = self._countdown_font.render(self._start_flash_text, True, (255, 235, 120))
+        flash_shadow_surface = self._countdown_font.render(self._start_flash_text, True, (0, 0, 0))
+
+        flash_rect = flash_surface.get_rect(center=screen.get_rect().center)
+        flash_shadow_rect = flash_shadow_surface.get_rect(center=(flash_rect.centerx + 4, flash_rect.centery + 4))
+
+        screen.blit(flash_shadow_surface, flash_shadow_rect)
+        screen.blit(flash_surface, flash_rect)
+
     def process_input(self, events):
         surface = pygame.display.get_surface()
         if surface is None:
@@ -115,7 +186,12 @@ class PlaySpace(SceneBase):
     def update(self):
         pass
 
-    def _draw_lane_glow(self, screen, lane_x, lane_width, judgement_y):
+    def _get_lane_glow_color(self, lane_index):
+        if len(self._lane_held_keys[lane_index]) >= 2:
+            return self._lane_glow_dual_color
+        return self._lane_glow_color
+
+    def _draw_lane_glow(self, screen, lane_x, lane_width, judgement_y, glow_rgb):
         glow_surface = pygame.Surface((lane_width, screen.get_height()), pygame.SRCALPHA)
 
         for distance in range(self._lane_glow_radius):
@@ -127,7 +203,7 @@ class PlaySpace(SceneBase):
             if alpha <= 0:
                 continue
 
-            glow_color = (*self._lane_glow_color, alpha)
+            glow_color = (*glow_rgb, alpha)
             pygame.draw.line(glow_surface, glow_color, (0, glow_y), (lane_width - 1, glow_y), 1)
 
         screen.blit(glow_surface, (lane_x, 0))
@@ -166,8 +242,28 @@ class PlaySpace(SceneBase):
             lane_x = start_x + lane_index * (self._lane_width + self._lane_gap)
             lane_rect = pygame.Rect(lane_x, 0, self._lane_width, screen_height)
             pygame.draw.rect(screen, self._lane_color, lane_rect)
+
+        countdown_seconds = self._get_countdown_seconds_remaining()
+
+        if not self._is_game_started and self._is_countdown_and_flash_complete():
+            self._game_manager.start_game()
+            self._is_game_started = True
+
+        if self._is_game_started:
+            self._game_manager.update_game(
+                screen,
+                start_x,
+                self._lane_width,
+                self._lane_gap,
+                judgement_y,
+            )
+
+        for lane_index in range(self._lane_count):
+            lane_x = start_x + lane_index * (self._lane_width + self._lane_gap)
+            lane_rect = pygame.Rect(lane_x, 0, self._lane_width, screen_height)
             if self._lane_pressed[lane_index]:
-                self._draw_lane_glow(screen, lane_x, self._lane_width, judgement_y)
+                glow_color = self._get_lane_glow_color(lane_index)
+                self._draw_lane_glow(screen, lane_x, self._lane_width, judgement_y, glow_color)
             pygame.draw.rect(screen, self._lane_border_color, lane_rect, 2)
 
         pygame.draw.line(
@@ -199,6 +295,11 @@ class PlaySpace(SceneBase):
         )
 
         player.render(screen, self._lane_width, judgement_y + (player.sprite_pixel_size[0] // 2))
+
+        if not self._is_game_started and countdown_seconds > 0:
+            self._draw_countdown_overlay(screen, countdown_seconds)
+        elif not self._is_game_started and self._is_start_flash_active():
+            self._draw_start_flash_overlay(screen)
 
 
     def on_scene_exit(self):

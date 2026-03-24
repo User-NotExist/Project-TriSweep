@@ -1,6 +1,8 @@
 from config import Config
 from pathlib import Path
 from scenes.main_menu import MainMenu
+from components.song import Song
+from components.game_manager import GameManager
 
 import pygame
 import argparse
@@ -13,6 +15,41 @@ args = parser.parse_args()
 CONFIG_PATH = Path("./config.jsonc")
 
 Config.load_config(CONFIG_PATH)
+
+
+def _build_test_game_manager():
+    songs_root = Path("./data/songs")
+    if songs_root.exists():
+        for song_folder in sorted(path for path in songs_root.iterdir() if path.is_dir()):
+            if not (song_folder / "meta.jsonc").exists():
+                continue
+
+            song = Song(song_folder)
+            if song.hidden or not song.difficulty:
+                continue
+
+            chart = song.difficulty[0]
+            return GameManager(song, chart, chart.notes, chart.obstacles)
+
+    # Fallback keeps --game mode runnable even if no songs/charts are available.
+    class _DummySong:
+        title = "Dummy Song"
+        artist = "Test Artist"
+
+    class _DummyChart:
+        name = "Test"
+
+        @property
+        def notes(self):
+            return []
+
+        @property
+        def obstacles(self):
+            return []
+
+    dummy_song = _DummySong()
+    dummy_chart = _DummyChart()
+    return GameManager(dummy_song, dummy_chart, dummy_chart.notes, dummy_chart.obstacles)
 
 pygame.init()
 
@@ -27,8 +64,7 @@ if not args.game:
     active_scene = MainMenu()
 else:
     from scenes.play_space import PlaySpace
-    from components.game_manager import GameManager
-    active_scene = PlaySpace(GameManager())
+    active_scene = PlaySpace(_build_test_game_manager())
 
 running = True
 

@@ -1,52 +1,45 @@
 from components.local_enum.judgement_level import JudgementLevel
 from config import Config
 import pygame
+import math
 
 
-class NoteBase:
+class ObstacleBase:
     """
-    Lightweight note model consumed by PlaySpace drawing code.
+    Lightweight obstacle model consumed by PlaySpace drawing code.
 
     IMPORTANT: chart files use the CSV column name `type`, but program code uses
-    `note_type` to avoid confusion with Python's built-in `type`.
+    `obstacle_type` to avoid confusion with Python's built-in `type`.
     """
 
     VALID_LANES = {0, 1, 2}
-    VALID_NOTE_TYPES = {1, 2, 3, 4, 5, 6}
+    VALID_OBSTACLE_TYPES = {1, 2, 3, 4, 5, 6}
 
-    # Fixed default color per note type.
-    NOTE_TYPE_DEFAULT_COLORS = {
-        1: (109, 199, 255),
-        2: (255, 165, 0),
-        5: (109, 199, 255),
-        6: (255, 165, 0),
-    }
-    NORMAL_LANE_COLORS = {
-        0: (255, 125, 227),
-        1: (232, 232, 232),
-        2: (255, 125, 227),
+    # Fixed default color per obstacle type.
+    OBSTACLE_TYPE_DEFAULT_COLORS = {
+        3: (255, 0, 0),
+        4: (0, 255, 0),
     }
     FALLBACK_COLOR = (220, 220, 220)
-    NOTE_BORDER_COLOR = (24, 28, 36)
-    NOTE_BORDER_WIDTH = 2
-    TAP_NOTE_HEIGHT = 24
+    OBSTACLE_BORDER_COLOR = (24, 28, 36)
+    OBSTACLE_BORDER_WIDTH = 2
+    TAP_OBSTACLE_HEIGHT = 24
 
-    def __init__(self, start_stamp, end_stamp, lane, note_type, color_override):
+    def __init__(self, start_stamp, end_stamp, lane, obstacle_type, color_override):
         self.validation_errors = []
 
         self.start_time = self._coerce_int(start_stamp, "start_stamp")
         self.end_time = self._coerce_int(end_stamp, "end_stamp")
         self.lane = self._coerce_int(lane, "lane")
-        self.note_type = self._coerce_int(note_type, "note_type")
+        self.obstacle_type = self._coerce_int(obstacle_type, "obstacle_type")
 
         self._validate_lane()
-        self._validate_note_type()
+        self._validate_obstacle_type()
         self._validate_time_range()
 
         self.color_override = self._coerce_color_override(color_override)
 
         self.base_score = 0
-        self.bonus_score = 0
 
     @property
     def is_valid(self):
@@ -68,9 +61,7 @@ class NoteBase:
         return max(0, self.end_time - self.start_time)
 
     def default_color(self):
-        if self.note_type in {1, 5}:
-            return self.NORMAL_LANE_COLORS.get(self.lane, self.FALLBACK_COLOR)
-        return self.NOTE_TYPE_DEFAULT_COLORS.get(self.note_type, self.FALLBACK_COLOR)
+        return self.OBSTACLE_TYPE_DEFAULT_COLORS.get(self.obstacle_type, self.FALLBACK_COLOR)
 
     def resolved_color(self):
         if self.color_override is not None:
@@ -88,9 +79,9 @@ class NoteBase:
         if self.lane not in self.VALID_LANES:
             self.validation_errors.append(f"Invalid lane: {self.lane}")
 
-    def _validate_note_type(self):
-        if self.note_type not in self.VALID_NOTE_TYPES:
-            self.validation_errors.append(f"Invalid note_type: {self.note_type}")
+    def _validate_obstacle_type(self):
+        if self.obstacle_type not in self.VALID_OBSTACLE_TYPES:
+            self.validation_errors.append(f"Invalid obstacle_type: {self.obstacle_type}")
 
     def _validate_time_range(self):
         if self.end_time != -1 and self.end_time < self.start_time:
@@ -137,63 +128,83 @@ class NoteBase:
         self.validation_errors.append(f"Invalid color_override: {color_override}; using default color")
         return None
 
-    def draw_note(self, width, note_speed, **kwargs):
+    def draw_obstacle(self, width, obstacle_speed, **kwargs):
         """
-                Return a solid rectangle note surface.
+                Return an obstacle surface composed of repeated circles.
 
                 Parameters
                 ----------
                 width: int
                     Render width in pixels, typically lane width.
-                note_speed: float
-                    Reserved for cross-note API consistency.
+                obstacle_speed: float
+                    Scroll speed in pixels per second.
                 kwargs:
-                    note_height (int): explicit note height in px.
+                    obstacle_height (int): explicit obstacle height in px.
                     min_height (int): floor for computed height.
-                    height_scale (float): multiplier for speed-based height.
+                    circle_radius (int): radius for each circle.
+                    circle_gap (int): spacing between circles.
                 """
-        note_width = max(1, int(width))
+        obstacle_width = max(1, int(width))
         min_height = max(1, int(kwargs.get("min_height", 18)))
-        note_speed_px_per_ms = abs(float(note_speed)) / 1000.0
+        obstacle_speed_px_per_ms = abs(float(obstacle_speed)) / 1000.0
 
         if self.is_long:
-            # Bottom is aligned to start_stamp by PlaySpace, so long-note top reaches end_stamp.
-            duration_height = int(self.duration_ms * note_speed_px_per_ms)
-            note_height = max(min_height, duration_height)
+            duration_height = int(self.duration_ms * obstacle_speed_px_per_ms)
+            obstacle_height = max(min_height, duration_height)
         else:
-            explicit_height = kwargs.get("note_height", self.TAP_NOTE_HEIGHT)
-            note_height = max(min_height, int(explicit_height))
+            explicit_height = kwargs.get("obstacle_height", self.TAP_OBSTACLE_HEIGHT)
+            obstacle_height = max(min_height, int(explicit_height))
 
-        note_surface = pygame.Surface((note_width, note_height), pygame.SRCALPHA)
-        note_surface.fill(self.resolved_color())
-        self._draw_note_border(note_surface)
-        return note_surface
+        obstacle_surface = pygame.Surface((obstacle_width, obstacle_height), pygame.SRCALPHA)
 
-    def _draw_note_border(self, note_surface):
-        border_width = int(self.NOTE_BORDER_WIDTH)
-        if border_width <= 0:
-            return
+        # Build one horizontal line of touching circles that fully covers lane width.
+        target_circle_size = max(2, int(kwargs.get("circle_size", max(8, obstacle_width // 10))))
+        circle_count = max(1, math.ceil(obstacle_width / target_circle_size))
+        circle_diameter = max(2, math.ceil(obstacle_width / circle_count))
+        circle_radius = max(1, circle_diameter // 2)
 
-        width, height = note_surface.get_size()
-        if width <= 1 or height <= 1:
-            return
+        x_positions = []
+        x_center = circle_radius
+        while x_center < obstacle_width:
+            x_positions.append(x_center)
+            x_center += circle_diameter
 
-        pygame.draw.rect(
-            note_surface,
-            self.NOTE_BORDER_COLOR,
-            note_surface.get_rect(),
-            width=min(border_width, max(1, min(width, height) // 2)),
-        )
+        if not x_positions:
+            x_positions = [obstacle_width // 2]
+        elif x_positions[-1] + circle_radius < obstacle_width:
+            x_positions.append(obstacle_width - circle_radius)
+
+        if self.is_long:
+            y_positions = []
+            y_center = circle_radius
+            while y_center < obstacle_height:
+                y_positions.append(y_center)
+                y_center += circle_diameter
+
+            if not y_positions:
+                y_positions = [obstacle_height // 2]
+            elif y_positions[-1] + circle_radius < obstacle_height:
+                y_positions.append(obstacle_height - circle_radius)
+        else:
+            y_positions = [obstacle_height // 2]
+
+        fill_color = self.resolved_color()
+        for center_y in y_positions:
+            for center_x in x_positions:
+                pygame.draw.circle(obstacle_surface, fill_color, (center_x, center_y), circle_radius)
+                pygame.draw.circle(
+                    obstacle_surface,
+                    self.OBSTACLE_BORDER_COLOR,
+                    (center_x, center_y),
+                    circle_radius,
+                    width=max(1, int(self.OBSTACLE_BORDER_WIDTH)),
+                )
+
+        return obstacle_surface
 
     def get_score(self, judgement: JudgementLevel, **kwargs):
         match judgement:
             case JudgementLevel.CRITPERFECT:
-                return (self.base_score * Config.CRITICAL_PERFECT_SCORE) , self.bonus_score
-            case JudgementLevel.PERFECT:
-                return (self.base_score * Config.PERFECT_SCORE), 0
-            case JudgementLevel.GREAT:
-                return (self.base_score * Config.GREAT_SCORE), 0
-            case JudgementLevel.GOOD:
-                return (self.base_score * Config.GOOD_SCORE), 0
+                return self.base_score * Config.CRITICAL_PERFECT_SCORE
             case JudgementLevel.MISS:
-                return 0, 0
+                return 0

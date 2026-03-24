@@ -17,7 +17,7 @@ class Song:
         
         for diff in self.__meta.get("difficulty", []):
             try:
-                chart = Chart(diff)
+                chart = Chart(diff, self.__path_to_folder)
                 self.__charts.append(chart)
             except Exception as e:
                 print(f"Error loading chart for difficulty {diff.get('name', 'Unknown')}: {e}")
@@ -80,6 +80,10 @@ class Song:
     @property
     def jacket_path(self) -> Path:
         return self.__path_to_folder / self.__meta.get("jacket_path", "")
+
+    @property
+    def folder_path(self) -> Path:
+        return self.__path_to_folder
 
     @property
     def difficulty(self) -> list:

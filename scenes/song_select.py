@@ -518,7 +518,7 @@ class SongSelect(SceneBase):
             self.selected_difficulty_index = 0
             self._start_selected_preview()
 
-    def _start_selected_chart_dummy(self):
+    def _start_selected_chart(self):
         if not self.songs:
             return
 
@@ -530,7 +530,11 @@ class SongSelect(SceneBase):
 
         self.selected_difficulty_index = max(0, min(self.selected_difficulty_index, len(charts) - 1))
         chart = charts[self.selected_difficulty_index]
-        print(f"Start clicked: {selected_song.title} [{chart.name} Lv.{chart.level}]")
+        difficulty_color = self._difficulty_color(chart.name)
+
+        from scenes.loading import Loading
+
+        self.switch_to_scene(Loading(selected_song, chart, difficulty_color))
 
     def on_scene_exit(self):
         self._stop_preview()
@@ -543,7 +547,7 @@ class SongSelect(SceneBase):
                         continue
 
                     if self.start_button_rect.collidepoint(event.pos):
-                        self._start_selected_chart_dummy()
+                        self._start_selected_chart()
                         continue
 
                     picked_diff = self._difficulty_card_at_pos(event.pos)
@@ -577,6 +581,8 @@ class SongSelect(SceneBase):
                 if event.key == pygame.K_ESCAPE:
                     from scenes.main_menu import MainMenu
                     self.switch_to_scene(MainMenu())
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    self._start_selected_chart()
 
     def update(self):
         # Switch happens at end of frame in main loop; avoid preview restart after scene exit.

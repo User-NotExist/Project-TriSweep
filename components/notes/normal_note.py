@@ -6,7 +6,9 @@ import pygame
 class NormalNote(NoteBase):
     def __init__(self, start_stamp, end_stamp, lane, color_override):
         super().__init__(start_stamp, end_stamp, lane, 1, color_override)
-        self.base_score = 200
+        self.base_score = 100
+        if self.end_time != -1:
+            self.base_score = 200
 
     def draw_note(self, width, note_speed, **kwargs):
-        super().draw_note(width, note_speed, **kwargs)
+        return super().draw_note(width, note_speed, **kwargs)
