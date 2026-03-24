@@ -45,7 +45,7 @@ class Config:
 
     "Offset Setting (ms)"
     OFFSET_MUSIC = 0
-    OFFSET_DISPLAY = 0
+    OFFSET_INPUT = 0
 
     _TYPE_NAME_MAP = {
         int: "int",

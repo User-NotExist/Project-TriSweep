@@ -9,8 +9,8 @@ import math
 class PlayData:
 
     PERCENTAGE_WEIGHT = {
-        "base": 970000,
-        "collect": 30000,
+        "base": 950000,
+        "collect": 50000,
         "bonus": 10000
     }
 
@@ -138,6 +138,10 @@ class PlayData:
     @property
     def current_score(self):
         return self.calculate_score()
+
+    @property
+    def current_combo(self):
+        return int(self._combo)
 
     @property
     def decreasing_display_score(self):

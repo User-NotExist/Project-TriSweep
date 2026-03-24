@@ -5,6 +5,8 @@ import pygame
 
 class Player:
     SPRITE_WIDTH_RATIO = 0.7
+    _DAMAGE_FLASH_DURATION_MS = 140
+    _DAMAGE_FLASH_MAX_ALPHA = 135
 
     def __init__(self):
         self._path_to_img = Path(Config.PLAYER_IMAGE_PATH)
@@ -16,6 +18,7 @@ class Player:
         self._sprite_pixel_size = (0, 0)
         self._load_base_surface()
         self._health = 100
+        self._damage_flash_end_ms = 0
 
     @property
     def x_position(self) -> float:
@@ -76,6 +79,13 @@ class Player:
         if sprite is None:
             return
 
+        flash_alpha = self._get_damage_flash_alpha()
+        if flash_alpha > 0:
+            # Overlay a short red tint when damage is taken.
+            tinted_sprite = sprite.copy()
+            tinted_sprite.fill((255, 0, 0, int(flash_alpha)), special_flags=pygame.BLEND_RGBA_ADD)
+            sprite = tinted_sprite
+
         sprite_rect = sprite.get_rect()
         sprite_rect.centerx = int(self._x_position)
         sprite_rect.centery = judgement_line_y
@@ -83,6 +93,9 @@ class Player:
 
     def apply_damage(self, damage: int):
         self._health -= damage
+
+        if int(damage) > 0:
+            self._damage_flash_end_ms = pygame.time.get_ticks() + self._DAMAGE_FLASH_DURATION_MS
 
         if self._health < 0:
             self._health = 0
@@ -96,3 +109,11 @@ class Player:
     @property
     def health(self) -> int:
         return self._health
+
+    def _get_damage_flash_alpha(self):
+        remaining_ms = int(self._damage_flash_end_ms) - pygame.time.get_ticks()
+        if remaining_ms <= 0:
+            return 0
+
+        ratio = max(0.0, min(1.0, remaining_ms / float(self._DAMAGE_FLASH_DURATION_MS)))
+        return int(self._DAMAGE_FLASH_MAX_ALPHA * ratio)

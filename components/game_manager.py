@@ -32,6 +32,12 @@ class GameManager:
         self._active_collect_holds = {}
         self._collect_hit_window_ms = 100
         self._last_judgement_payload = None
+        self._music_start_due_ms = None
+        self._music_has_started = False
+        self._music_fade_delay_ms = 500
+        self._music_fade_duration_ms = 1500
+        self._music_fade_due_ms = None
+        self._music_fade_started = False
 
         self.__starting_ms = None
 
@@ -122,7 +128,7 @@ class GameManager:
 
     def _judge_note(self, note: NoteBase, hit_error_ms: int, hold_ratio: Optional[float] = None):
         if note.is_long and hold_ratio is not None:
-            return JudgementLevel.CRITPERFECT if hold_ratio >= 0.5 else JudgementLevel.GREAT
+            return JudgementLevel.CRITPERFECT if hold_ratio >= 0.8 else JudgementLevel.GOOD
 
         abs_error_ms = abs(int(hit_error_ms))
         if int(getattr(note, "note_type", -1)) in {5, 6}:
@@ -174,6 +180,9 @@ class GameManager:
             "timing": self._timing_label(int(hit_error_ms)) if hit_error_ms is not None else None,
             "hold_ratio": None,
         }
+        if judgement == JudgementLevel.CRITPERFECT:
+            self.player.apply_heal(2)
+
         obstacle_judgements.append(payload)
         self._record_obstacle_judgement(payload)
         self._remove_obstacle_instance(obstacle)
@@ -218,6 +227,8 @@ class GameManager:
             "timing": self._timing_label(start_error_ms),
             "hold_ratio": hold_ratio,
         }
+        if judgement == JudgementLevel.CRITPERFECT:
+            self.player.apply_heal(5 * hold_ratio)
         obstacle_judgements.append(payload)
         self._record_obstacle_judgement(payload)
         self._remove_obstacle_instance(obstacle)
@@ -227,6 +238,16 @@ class GameManager:
             return None
         current_tick = pygame.time.get_ticks() if now_ms is None else int(now_ms)
         return max(0, current_tick - self.__starting_ms)
+
+    @staticmethod
+    def _get_input_offset_ms():
+        return int(getattr(Config, "OFFSET_INPUT", 0))
+
+    def _get_adjusted_input_elapsed_ms(self, now_ms: Optional[int] = None):
+        elapsed_ms = self._get_elapsed_ms(now_ms)
+        if elapsed_ms is None:
+            return None
+        return int(elapsed_ms) + self._get_input_offset_ms()
 
     @staticmethod
     def _timing_label(hit_error_ms: int):
@@ -331,6 +352,27 @@ class GameManager:
         return int(self._play_data.decreasing_display_score)
 
     @property
+    def current_combo(self):
+        return int(self._play_data.current_combo)
+
+    @property
+    def playing_song(self):
+        return self._playing_song
+
+    @property
+    def playing_chart(self):
+        return self._playing_chart
+
+    @property
+    def is_round_finished(self):
+        if not self._is_playing or self.__starting_ms is None:
+            return False
+
+        has_pending_notes = bool(self._loaded_notes) or bool(self._active_long_holds)
+        has_pending_obstacles = bool(self._loaded_obstacles) or bool(self._active_collect_holds)
+        return not (has_pending_notes or has_pending_obstacles)
+
+    @property
     def last_judgement_payload(self):
         if self._last_judgement_payload is None:
             return None
@@ -347,7 +389,7 @@ class GameManager:
         if not self._is_playing or self.__starting_ms is None:
             return []
 
-        now_elapsed_ms = self._get_elapsed_ms(now_ms)
+        now_elapsed_ms = self._get_adjusted_input_elapsed_ms(now_ms)
         if now_elapsed_ms is None:
             return []
 
@@ -443,6 +485,9 @@ class GameManager:
         return self._player
 
     def _start_song_music(self):
+        if self._music_has_started:
+            return
+
         music_path = getattr(self._playing_song, "music_path", None)
         if music_path is None:
             return
@@ -455,8 +500,54 @@ class GameManager:
             pygame.mixer.music.load(str(resolved_path))
             pygame.mixer.music.set_volume(float(Config.MUSIC_VOLUME))
             pygame.mixer.music.play()
+            self._music_has_started = True
         except Exception as error:
             print(f"[GameManager] Failed to start music '{music_path}': {error}")
+
+    def _update_music_start(self, now_ms: int):
+        if self._music_has_started:
+            return
+        if self._music_start_due_ms is None:
+            return
+        if int(now_ms) < int(self._music_start_due_ms):
+            return
+        self._start_song_music()
+
+    def _update_round_end_music(self, now_ms: int):
+        if self._music_fade_started:
+            return
+
+        if not self.is_round_finished:
+            return
+
+        # If music was never started (large OFFSET_MUSIC + short chart), prevent late auto-start.
+        if not self._music_has_started:
+            self._music_start_due_ms = None
+            self._music_fade_started = True
+            return
+
+        if self._music_fade_due_ms is None:
+            self._music_fade_due_ms = int(now_ms) + int(self._music_fade_delay_ms)
+            return
+
+        if int(now_ms) < int(self._music_fade_due_ms):
+            return
+
+        try:
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pygame.mixer.music.fadeout(int(self._music_fade_duration_ms))
+        except Exception:
+            pass
+
+        self._music_fade_started = True
+        self._music_start_due_ms = None
+
+    def stop_song_music(self):
+        try:
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
+        except Exception:
+            pass
 
     def start_game(self):
         if self.__starting_ms is not None:
@@ -465,7 +556,14 @@ class GameManager:
         self.__starting_ms = pygame.time.get_ticks()
         self._is_playing = True
         self._last_tick_ms = self.__starting_ms
-        self._start_song_music()
+        self._music_fade_due_ms = None
+        self._music_fade_started = False
+        music_delay_ms = max(0, int(getattr(Config, "OFFSET_MUSIC", 0)))
+        if music_delay_ms == 0:
+            self._music_start_due_ms = self.__starting_ms
+            self._start_song_music()
+        else:
+            self._music_start_due_ms = self.__starting_ms + music_delay_ms
 
     def update_game(
         self,
@@ -479,6 +577,7 @@ class GameManager:
             self.start_game()
 
         now_ms = pygame.time.get_ticks()
+        self._update_music_start(now_ms)
         elapsed_ms = now_ms - self.__starting_ms
         if self._last_tick_ms is None:
             delta_ms = 0
@@ -719,6 +818,8 @@ class GameManager:
             damage_to_apply = int(self._damage_accumulator)
             self._damage_accumulator -= damage_to_apply
             player.apply_damage(damage_to_apply)
+
+        self._update_round_end_music(now_ms)
 
         return obstacle_judgements
 

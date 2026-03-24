@@ -38,6 +38,9 @@ class PlaySpace(SceneBase):
         self._lane_pressed = [False, False, False]
         self._lane_held_keys = [set() for _ in range(self._lane_count)]
         self._is_game_started = False
+        self._is_result_transitioned = False
+        self._result_transition_delay_ms = 3000
+        self._round_finished_at_ms = None
         self._countdown_duration_ms = 3000
         self._countdown_start_ms = pygame.time.get_ticks()
         self._countdown_font = self._create_countdown_font(170)
@@ -45,11 +48,36 @@ class PlaySpace(SceneBase):
         self._countdown_message_text = "Get Ready"
         self._start_flash_duration_ms = 450
         self._start_flash_text = "Good luck!"
-        self._hud_score_font = self._create_countdown_font(30)
-        self._hud_judgement_font = self._create_countdown_font(24)
+        self._hud_score_font = self._create_countdown_font(44)
+        self._hud_judgement_font = self._create_countdown_font(32)
+        self._hud_hit_error_font = self._create_countdown_font(20)
+        self._hud_combo_font = self._create_countdown_font(30)
         self._hud_margin = 16
+        self._hud_shadow_color = (0, 0, 0)
+        self._hud_score_color = (245, 248, 255)
+        self._hud_default_text_color = (210, 216, 230)
+        self._hud_unknown_judgement_color = (235, 238, 245)
+        self._hud_hit_error_fast_color = (110, 190, 255)
+        self._hud_hit_error_late_color = (255, 136, 110)
+        self._hud_combo_color = (238, 242, 252)
+        self._hud_judgement_text_map = {
+            "CRITPERFECT": "CRITICAL PERFECT",
+            "PERFECT": "PERFECT",
+            "GREAT": "GREAT",
+            "GOOD": "GOOD",
+            "MISS": "MISS",
+        }
+        self._hud_judgement_color_map = {
+            "CRITPERFECT": (252, 227, 3),
+            "PERFECT": (222, 159, 22),
+            "GREAT": (234, 72, 240),
+            "GOOD": (84, 227, 27),
+            "MISS": (255, 110, 110),
+        }
         self._hud_score_font.set_bold(True)
         self._hud_judgement_font.set_bold(True)
+        self._hud_hit_error_font.set_bold(True)
+        self._hud_combo_font.set_bold(True)
 
         #pygame.mouse.set_visible(False)
         #pygame.event.set_grab(True)
@@ -201,7 +229,20 @@ class PlaySpace(SceneBase):
             )
 
     def update(self):
-        pass
+        if not self._is_game_started or self._is_result_transitioned:
+            return
+
+        if self._game_manager.is_round_finished:
+            if self._round_finished_at_ms is None:
+                self._round_finished_at_ms = pygame.time.get_ticks()
+
+            if pygame.time.get_ticks() - self._round_finished_at_ms < self._result_transition_delay_ms:
+                return
+
+            from scenes.result import Result
+
+            self._is_result_transitioned = True
+            self.switch_to_scene(Result(self._game_manager))
 
     def _get_lane_glow_color(self, lane_index):
         if len(self._lane_held_keys[lane_index]) >= 2:
@@ -252,46 +293,41 @@ class PlaySpace(SceneBase):
         else:
             display_score = int(self._game_manager.current_score)
 
-        score_text = f"Score: {display_score / 10000:.4f}%"
-        score_surface = self._hud_score_font.render(score_text, True, (245, 248, 255))
-        score_shadow = self._hud_score_font.render(score_text, True, (0, 0, 0))
+        score_text = f"{display_score / 10000:.4f}%"
+        score_surface = self._hud_score_font.render(score_text, True, self._hud_score_color)
+        score_shadow = self._hud_score_font.render(score_text, True, self._hud_shadow_color)
 
         score_rect = score_surface.get_rect(midtop=(screen.get_width() // 2, self._hud_margin))
         screen.blit(score_shadow, (score_rect.x + 2, score_rect.y + 2))
         screen.blit(score_surface, score_rect)
 
         last_payload = self._game_manager.last_judgement_payload
+        hit_error_text = ""
+        hit_error_color = self._hud_default_text_color
         if last_payload is None:
-            judgement_text = "Judgement: -"
-            judgement_color = (210, 216, 230)
+            judgement_text = ""
+            judgement_color = self._hud_default_text_color
         else:
             judgement = last_payload.get("judgement")
             judgement_name = judgement.name if hasattr(judgement, "name") else str(judgement)
             hit_error_ms = last_payload.get("hit_error_ms")
-            if hit_error_ms is None:
-                timing_text = ""
-            else:
+            if hit_error_ms is not None:
                 hit_error_ms = int(hit_error_ms)
                 abs_ms = abs(hit_error_ms)
                 if hit_error_ms < 0:
-                    timing_text = f"  FAST {abs_ms}ms"
+                    hit_error_text = f"FAST {abs_ms}ms"
+                    hit_error_color = self._hud_hit_error_fast_color
                 elif hit_error_ms > 0:
-                    timing_text = f"  LATE {abs_ms}ms"
-                else:
-                    timing_text = "  ON TIME"
-            judgement_text = f"{judgement_name}{timing_text}"
-
-            judgement_color_map = {
-                "CRITPERFECT": (255, 225, 110),
-                "PERFECT": (150, 235, 255),
-                "GREAT": (120, 230, 175),
-                "GOOD": (240, 205, 95),
-                "MISS": (255, 110, 110),
-            }
-            judgement_color = judgement_color_map.get(judgement_name, (235, 238, 245))
+                    hit_error_text = f"LATE {abs_ms}ms"
+                    hit_error_color = self._hud_hit_error_late_color
+            judgement_text = self._hud_judgement_text_map.get(judgement_name, judgement_name)
+            judgement_color = self._hud_judgement_color_map.get(
+                judgement_name,
+                self._hud_unknown_judgement_color,
+            )
 
         judgement_surface = self._hud_judgement_font.render(judgement_text, True, judgement_color)
-        judgement_shadow = self._hud_judgement_font.render(judgement_text, True, (0, 0, 0))
+        judgement_shadow = self._hud_judgement_font.render(judgement_text, True, self._hud_shadow_color)
         judgement_rect = judgement_surface.get_rect(
             midtop=(
                 screen.get_width() // 2,
@@ -301,6 +337,29 @@ class PlaySpace(SceneBase):
 
         screen.blit(judgement_shadow, (judgement_rect.x + 2, judgement_rect.y + 2))
         screen.blit(judgement_surface, judgement_rect)
+
+        combo_top_y = judgement_rect.bottom + 4
+        if hit_error_text:
+            hit_error_surface = self._hud_hit_error_font.render(hit_error_text, True, hit_error_color)
+            hit_error_shadow = self._hud_hit_error_font.render(hit_error_text, True, self._hud_shadow_color)
+            hit_error_rect = hit_error_surface.get_rect(
+                midtop=(
+                    screen.get_width() // 2,
+                    judgement_rect.bottom + 4,
+                )
+            )
+            screen.blit(hit_error_shadow, (hit_error_rect.x + 2, hit_error_rect.y + 2))
+            screen.blit(hit_error_surface, hit_error_rect)
+            combo_top_y = hit_error_rect.bottom + 4
+
+        combo_text = ""
+        if int(self._game_manager.current_combo) > 0:
+            combo_text = f"{int(self._game_manager.current_combo)}"
+        combo_surface = self._hud_combo_font.render(combo_text, True, self._hud_combo_color)
+        combo_shadow = self._hud_combo_font.render(combo_text, True, self._hud_shadow_color)
+        combo_rect = combo_surface.get_rect(midtop=(screen.get_width() // 2, combo_top_y))
+        screen.blit(combo_shadow, (combo_rect.x + 2, combo_rect.y + 2))
+        screen.blit(combo_surface, combo_rect)
 
     def render(self, screen):
         screen.fill(self._background_color)
@@ -379,5 +438,6 @@ class PlaySpace(SceneBase):
 
 
     def on_scene_exit(self):
+        self._game_manager.stop_song_music()
         pygame.mouse.set_visible(True)
         pygame.event.set_grab(False)

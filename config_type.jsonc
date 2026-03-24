@@ -25,6 +25,6 @@
     "GOOD_SCORE": "int",
     "SCORE_DISPLAY_DECREASING": "bool",
     "OFFSET_MUSIC": "int",
-    "OFFSET_DISPLAY": "int"
+    "OFFSET_INPUT": "int"
 }
 
