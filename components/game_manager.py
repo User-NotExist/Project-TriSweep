@@ -378,6 +378,94 @@ class GameManager:
             return None
         return dict(self._last_judgement_payload)
 
+    def force_complete_round_as_miss(self, now_ms: Optional[int] = None):
+        if self.__starting_ms is None:
+            return
+
+        now_elapsed_ms = self._get_adjusted_input_elapsed_ms(now_ms)
+        if now_elapsed_ms is None:
+            now_elapsed_ms = 0
+
+        # Resolve active long-note holds as MISS first so they do not duplicate with remaining notes.
+        for lane_index in list(self._active_long_holds.keys()):
+            hold_state = self._active_long_holds.get(lane_index)
+            if hold_state is None:
+                continue
+
+            note = hold_state.get("note")
+            if note is None:
+                self._active_long_holds.pop(lane_index, None)
+                continue
+
+            miss_payload = {
+                "lane": int(lane_index),
+                "note": note,
+                "is_long": True,
+                "hit_error_ms": int(now_elapsed_ms - int(note.start_time)),
+                "timing": self._timing_label(int(now_elapsed_ms - int(note.start_time))),
+                "judgement": JudgementLevel.MISS,
+                "hold_ratio": 0.0,
+            }
+            self._active_long_holds.pop(lane_index, None)
+            if note in self._loaded_notes:
+                self._loaded_notes.remove(note)
+            self._record_note_judgement(miss_payload)
+
+        for note in self._loaded_notes.copy():
+            miss_payload = {
+                "lane": int(note.lane),
+                "note": note,
+                "is_long": bool(note.is_long),
+                "hit_error_ms": int(now_elapsed_ms - int(note.start_time)),
+                "timing": self._timing_label(int(now_elapsed_ms - int(note.start_time))),
+                "judgement": JudgementLevel.MISS,
+                "hold_ratio": 0.0 if note.is_long else None,
+            }
+            self._loaded_notes.remove(note)
+            self._record_note_judgement(miss_payload)
+
+        # Resolve active long collect holds as MISS through existing finalize path.
+        for obstacle in self._loaded_obstacles.copy():
+            if not isinstance(obstacle, CollectObstacle) or not obstacle.is_long:
+                continue
+            if id(obstacle) not in self._active_collect_holds:
+                continue
+            self._finalize_long_collect_hold(
+                obstacle,
+                [],
+                now_elapsed_ms,
+                forced_judgement=JudgementLevel.MISS,
+            )
+
+        for obstacle in self._loaded_obstacles.copy():
+            if isinstance(obstacle, CollectObstacle):
+                if obstacle.is_long:
+                    self._finalize_long_collect_hold(
+                        obstacle,
+                        [],
+                        now_elapsed_ms,
+                        forced_judgement=JudgementLevel.MISS,
+                    )
+                else:
+                    self._finalize_collect_obstacle(
+                        obstacle,
+                        JudgementLevel.MISS,
+                        [],
+                        hit_error_ms=int(now_elapsed_ms - int(obstacle.start_time)),
+                    )
+                continue
+
+            payload = {
+                "obstacle": obstacle,
+                "judgement": JudgementLevel.MISS,
+                "is_long": bool(getattr(obstacle, "is_long", False)),
+                "hit_error_ms": int(now_elapsed_ms - int(getattr(obstacle, "start_time", 0))),
+                "timing": self._timing_label(int(now_elapsed_ms - int(getattr(obstacle, "start_time", 0)))),
+                "hold_ratio": 0.0 if bool(getattr(obstacle, "is_long", False)) else None,
+            }
+            self._record_obstacle_judgement(payload)
+            self._remove_obstacle_instance(obstacle)
+
     def process_input(self, lane_pressed, lane_held_keys, lane_trigger_counts=None, now_ms: Optional[int] = None):
         """
         Evaluate lane input against the closest note on each lane.

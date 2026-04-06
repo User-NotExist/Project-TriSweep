@@ -29,6 +29,7 @@ class Result(SceneBase):
 		self._retry_button_rect = pygame.Rect(0, 0, 0, 0)
 		self._back_button_rect = pygame.Rect(0, 0, 0, 0)
 
+
 	@staticmethod
 	def _create_font(size, bold=False):
 		candidates = [

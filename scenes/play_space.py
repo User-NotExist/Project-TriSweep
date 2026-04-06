@@ -41,6 +41,13 @@ class PlaySpace(SceneBase):
         self._is_result_transitioned = False
         self._result_transition_delay_ms = 3000
         self._round_finished_at_ms = None
+        self._skip_hold_duration_ms = 5000
+        self._skip_warning_window_ms = 5000
+        self._skip_hold_started_ms = None
+        self._is_dead = False
+        self._dead_started_ms = None
+        self._dead_skip_delay_ms = 3000
+        self._dead_canvas_text = "You are dead. Skipping Track..."
         self._countdown_duration_ms = 3000
         self._countdown_start_ms = pygame.time.get_ticks()
         self._countdown_font = self._create_countdown_font(170)
@@ -52,6 +59,9 @@ class PlaySpace(SceneBase):
         self._hud_judgement_font = self._create_countdown_font(32)
         self._hud_hit_error_font = self._create_countdown_font(20)
         self._hud_combo_font = self._create_countdown_font(30)
+        self._skip_warning_font = self._create_countdown_font(34)
+        self._skip_warning_sub_font = self._create_countdown_font(20)
+        self._dead_canvas_font = self._create_countdown_font(42)
         self._hud_margin = 16
         self._hud_shadow_color = (0, 0, 0)
         self._hud_score_color = (245, 248, 255)
@@ -78,9 +88,12 @@ class PlaySpace(SceneBase):
         self._hud_judgement_font.set_bold(True)
         self._hud_hit_error_font.set_bold(True)
         self._hud_combo_font.set_bold(True)
+        self._skip_warning_font.set_bold(True)
+        self._skip_warning_sub_font.set_bold(True)
+        self._dead_canvas_font.set_bold(True)
 
-        #pygame.mouse.set_visible(False)
-        #pygame.event.set_grab(True)
+        pygame.mouse.set_visible(False)
+        pygame.event.set_grab(True)
 
     @staticmethod
     def _resolve_keycode(key_name, fallback_keycode):
@@ -202,12 +215,19 @@ class PlaySpace(SceneBase):
             player.set_x_position(start_x + (total_width // 2))
             self._is_player_x_initialized = True
 
+        if self._is_dead:
+            self._clear_lane_input_states()
+            return
+
         lane_trigger_counts = [0 for _ in range(self._lane_count)]
 
         for event in events:
             if event.type == pygame.MOUSEMOTION:
                 player.apply_mouse_delta(event.rel[0], Config.PLAYER_MOVE_SPEED)
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE and self._is_game_started and self._skip_hold_started_ms is None:
+                    self._skip_hold_started_ms = pygame.time.get_ticks()
+
                 lane_index = self._lane_key_to_lane_index.get(event.key)
                 if lane_index is not None:
                     was_key_held = event.key in self._lane_held_keys[lane_index]
@@ -216,6 +236,9 @@ class PlaySpace(SceneBase):
                         lane_trigger_counts[lane_index] += 1
                     self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
             elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_ESCAPE:
+                    self._skip_hold_started_ms = None
+
                 lane_index = self._lane_key_to_lane_index.get(event.key)
                 if lane_index is not None:
                     self._lane_held_keys[lane_index].discard(event.key)
@@ -232,6 +255,37 @@ class PlaySpace(SceneBase):
         if not self._is_game_started or self._is_result_transitioned:
             return
 
+        if not self._is_dead and int(self._game_manager.player.health) <= 0:
+            self._is_dead = True
+            self._dead_started_ms = pygame.time.get_ticks()
+            self._skip_hold_started_ms = None
+            self._clear_lane_input_states()
+
+        if self._is_dead:
+            if self._dead_started_ms is None:
+                self._dead_started_ms = pygame.time.get_ticks()
+
+            if pygame.time.get_ticks() - self._dead_started_ms < self._dead_skip_delay_ms:
+                return
+
+            from scenes.result import Result
+
+            self._is_result_transitioned = True
+            self._game_manager.force_complete_round_as_miss()
+            self.switch_to_scene(Result(self._game_manager))
+            return
+
+        if self._skip_hold_started_ms is not None:
+            held_ms = pygame.time.get_ticks() - self._skip_hold_started_ms
+            if held_ms >= self._skip_hold_duration_ms:
+                from scenes.result import Result
+
+                self._skip_hold_started_ms = None
+                self._is_result_transitioned = True
+                self._game_manager.force_complete_round_as_miss()
+                self.switch_to_scene(Result(self._game_manager))
+                return
+
         if self._game_manager.is_round_finished:
             if self._round_finished_at_ms is None:
                 self._round_finished_at_ms = pygame.time.get_ticks()
@@ -243,6 +297,65 @@ class PlaySpace(SceneBase):
 
             self._is_result_transitioned = True
             self.switch_to_scene(Result(self._game_manager))
+
+    def _get_skip_remaining_ms(self):
+        if self._skip_hold_started_ms is None:
+            return None
+        elapsed_ms = pygame.time.get_ticks() - self._skip_hold_started_ms
+        return max(0, int(self._skip_hold_duration_ms - elapsed_ms))
+
+    def _draw_skip_warning_overlay(self, screen, remaining_ms: int):
+        warning_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        warning_surface.fill((0, 0, 0, 120))
+        screen.blit(warning_surface, (0, 0))
+
+        panel_width = min(620, max(360, screen.get_width() - 120))
+        panel_height = 160
+        panel_rect = pygame.Rect(
+            (screen.get_width() - panel_width) // 2,
+            (screen.get_height() - panel_height) // 2,
+            panel_width,
+            panel_height,
+        )
+        pygame.draw.rect(screen, (34, 22, 26), panel_rect, border_radius=14)
+        pygame.draw.rect(screen, (214, 94, 94), panel_rect, width=3, border_radius=14)
+
+        remain_sec = max(0.0, remaining_ms / 1000.0)
+        title_text = f"Hold ESC: skip in {remain_sec:.1f}s"
+        subtitle_text = "Skipping records all unresolved notes/obstacles as MISS"
+
+        title_surface = self._skip_warning_font.render(title_text, True, (255, 170, 170))
+        subtitle_surface = self._skip_warning_sub_font.render(subtitle_text, True, (242, 220, 220))
+
+        screen.blit(title_surface, title_surface.get_rect(midtop=(panel_rect.centerx, panel_rect.y + 28)))
+        screen.blit(subtitle_surface, subtitle_surface.get_rect(midtop=(panel_rect.centerx, panel_rect.y + 88)))
+
+    def _draw_dead_overlay(self, screen):
+        warning_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        warning_surface.fill((0, 0, 0, 170))
+        screen.blit(warning_surface, (0, 0))
+
+        panel_width = min(700, max(380, screen.get_width() - 120))
+        panel_height = 160
+        panel_rect = pygame.Rect(
+            (screen.get_width() - panel_width) // 2,
+            (screen.get_height() - panel_height) // 2,
+            panel_width,
+            panel_height,
+        )
+        pygame.draw.rect(screen, (36, 20, 24), panel_rect, border_radius=14)
+        pygame.draw.rect(screen, (222, 94, 94), panel_rect, width=3, border_radius=14)
+
+        message_surface = self._dead_canvas_font.render(self._dead_canvas_text, True, (255, 190, 190))
+        message_shadow = self._dead_canvas_font.render(self._dead_canvas_text, True, (0, 0, 0))
+        message_rect = message_surface.get_rect(center=panel_rect.center)
+
+        screen.blit(message_shadow, (message_rect.x + 2, message_rect.y + 2))
+        screen.blit(message_surface, message_rect)
+
+    def _clear_lane_input_states(self):
+        self._lane_pressed = [False for _ in range(self._lane_count)]
+        self._lane_held_keys = [set() for _ in range(self._lane_count)]
 
     def _get_lane_glow_color(self, lane_index):
         if len(self._lane_held_keys[lane_index]) >= 2:
@@ -381,7 +494,7 @@ class PlaySpace(SceneBase):
             self._game_manager.start_game()
             self._is_game_started = True
 
-        if self._is_game_started:
+        if self._is_game_started and not self._is_dead:
             self._game_manager.update_game(
                 screen,
                 start_x,
@@ -432,6 +545,18 @@ class PlaySpace(SceneBase):
             self._draw_countdown_overlay(screen, countdown_seconds)
         elif not self._is_game_started and self._is_start_flash_active():
             self._draw_start_flash_overlay(screen)
+
+        skip_remaining_ms = self._get_skip_remaining_ms()
+        if (
+            self._is_game_started
+            and not self._is_dead
+            and skip_remaining_ms is not None
+            and 0 < skip_remaining_ms <= self._skip_warning_window_ms
+        ):
+            self._draw_skip_warning_overlay(screen, skip_remaining_ms)
+
+        if self._is_dead:
+            self._draw_dead_overlay(screen)
 
         # Keep HUD text on top of all scene visuals/overlays.
         self._draw_top_hud(screen)
