@@ -1,6 +1,4 @@
-from components.local_enum.judgement_level import JudgementLevel
 from components.notes.note_base import NoteBase
-import pygame
 
 
 class NormalNote(NoteBase):
@@ -10,5 +8,3 @@ class NormalNote(NoteBase):
         if self.end_time != -1:
             self.base_score = 200
 
-    def draw_note(self, width, note_speed, **kwargs):
-        return super().draw_note(width, note_speed, **kwargs)

@@ -1,14 +1,16 @@
 import pygame
 
 from components.scene_base import SceneBase
+from components.play_data import PlayData
 
 
 class Result(SceneBase):
-	def __init__(self, game_manager):
+	def __init__(self, play_data: PlayData):
 		super().__init__()
-		self._game_manager = game_manager
-		self._song = game_manager.playing_song
-		self._chart = game_manager.playing_chart
+		self._play_data = play_data
+		self._result_file_path = self._play_data.save_to_json()
+		self._song = self._play_data.song
+		self._chart = self._play_data.chart
 
 		self._background_color = (18, 22, 31)
 		self._panel_color = (26, 31, 43)
@@ -128,7 +130,7 @@ class Result(SceneBase):
 		title = self._title_font.render("Result", True, self._text_color)
 		screen.blit(title, title.get_rect(midtop=(panel.centerx, panel.y + 20)))
 
-		score_pct = f"{self._game_manager.current_score / 10000:.4f}%"
+		score_pct = f"{self._play_data.current_score / 10000:.4f}%"
 		score_title = self._heading_font.render("Final Score", True, self._subtle_text_color)
 		score_value = self._heading_font.render(score_pct, True, self._accent_color)
 		screen.blit(score_title, score_title.get_rect(midtop=(panel.centerx, panel.y + 92)))
@@ -143,8 +145,7 @@ class Result(SceneBase):
 			f"Song: {song_title}",
 			f"Artist: {artist_name}",
 			f"Chart: {chart_name} / {chart_author}",
-			f"Current Combo: {self._game_manager.current_combo}",
-			f"Max Score: {self._game_manager.max_score / 10000:.4f}%",
+			f"Max Combo: {self._play_data.highest_combo} / {self._play_data.max_combo}",
 			"R: Retry    ESC: Back to Song Select",
 		]
 

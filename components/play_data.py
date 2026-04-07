@@ -5,6 +5,10 @@ from components.notes.note_base import NoteBase
 from components.song import Song
 from components.chart import Chart
 import math
+import json
+import re
+from datetime import datetime
+from pathlib import Path
 
 class PlayData:
 
@@ -27,7 +31,10 @@ class PlayData:
         self._max_combo = 0
         self._create_max_raw()
 
+        self._recorded_hit_score = []
         self._recorded_note_hit = []
+        self._recorded_player_x = []
+        self._last_player_x_sample_ms = None
         self._base_note_raw = 0
         self._collect_raw = 0
         #self._avoid_raw = 0
@@ -41,9 +48,7 @@ class PlayData:
     @staticmethod
     def _target_judgement_for_note(note: NoteBase):
         # Break notes require CRITPERFECT to avoid display score decrease.
-        if int(getattr(note, "note_type", -1)) in {2, 6}:
-            return JudgementLevel.CRITPERFECT
-        return JudgementLevel.PERFECT
+        return JudgementLevel.CRITPERFECT
 
     def record_note(self, note : NoteBase, hit_error : int, judgement_level : JudgementLevel, pressed_side : int):
 
@@ -51,8 +56,8 @@ class PlayData:
             self._combo = 0
         else:
             self._combo += 1
-            if self._combo > self._max_combo:
-                self._max_combo = self._combo
+            if self._combo > self._highest_combo:
+                self._highest_combo = self._combo
 
         score = note.get_score(judgement_level, hit_error=hit_error)
         self._base_note_raw += score[0]
@@ -69,6 +74,13 @@ class PlayData:
             "hit_error" : hit_error,
             "judgement_level" : judgement_level,
             "pressed_side" : pressed_side,
+            "current_combo" : self._combo
+        })
+
+        self._recorded_hit_score.append({
+            "object_type" : "NOTE",
+            "type_id" : note.note_type,
+            "current_score" : self.current_score
         })
 
     def record_obstacle(self, obstacle : ObstacleBase, judgement_level : JudgementLevel):
@@ -100,6 +112,21 @@ class PlayData:
 
         return count
 
+    def record_player_x(self, player_x: float, timestamp_ms: int, center_x: float = 0.0):
+        timestamp_ms = int(timestamp_ms)
+        if self._last_player_x_sample_ms is not None:
+            if (timestamp_ms - int(self._last_player_x_sample_ms)) < 500:
+                return
+
+        centered_x = float(player_x) - float(center_x)
+        self._recorded_player_x.append(
+            {
+                "timestamp_ms": timestamp_ms,
+                "x_position": centered_x,
+            }
+        )
+        self._last_player_x_sample_ms = timestamp_ms
+
 
     def _create_max_raw(self):
         for note in self._chart.notes:
@@ -115,10 +142,10 @@ class PlayData:
                 self._max_collect_raw += score
                 self._max_combo += 1
 
-    def calculate_score(self):
-        base_ratio = (self._base_note_raw / self._max_base_note_raw) if self._max_base_note_raw > 0 else 0.0
-        collect_ratio = (self._collect_raw / self._max_collect_raw) if self._max_collect_raw > 0 else 0.0
-        bonus_ratio = (self._bonus_raw / self._max_bonus_raw) if self._max_bonus_raw > 0 else 0.0
+    def total_score(self):
+        base_ratio = (self._base_note_raw / self._max_base_note_raw) if self._max_base_note_raw > 0 else 1.0
+        collect_ratio = (self._collect_raw / self._max_collect_raw) if self._max_collect_raw > 0 else 1.0
+        bonus_ratio = (self._bonus_raw / self._max_bonus_raw) if self._max_bonus_raw > 0 else 1.0
 
         base_score = min(
             PlayData.PERCENTAGE_WEIGHT["base"],
@@ -137,11 +164,27 @@ class PlayData:
 
     @property
     def current_score(self):
-        return self.calculate_score()
+        return self.total_score()
 
     @property
     def current_combo(self):
         return int(self._combo)
+
+    @property
+    def highest_combo(self):
+        return int(self._highest_combo)
+
+    @property
+    def max_combo(self):
+        return int(self._max_combo)
+
+    @property
+    def song(self):
+        return self._song
+
+    @property
+    def chart(self):
+        return self._chart
 
     @property
     def decreasing_display_score(self):
@@ -172,6 +215,70 @@ class PlayData:
                 f"_max_bonus_score={self._max_bonus_raw}\n"
                 f"total_combo={self._max_combo}\n"
                 f"total_max_score={self._max_base_note_raw + self._max_collect_raw + self._max_bonus_raw}\n")
+
+    @staticmethod
+    def _sanitize_filename_component(text: str):
+        cleaned = re.sub(r'[<>:"/\\|?*]', "_", str(text or "Unknown"))
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = cleaned.rstrip(". ")
+        return cleaned or "Unknown"
+
+    def _to_serializable_note_hit(self, note_hit: dict):
+        serialized = dict(note_hit)
+        judgement = serialized.get("judgement_level")
+        if isinstance(judgement, JudgementLevel):
+            serialized["judgement_level"] = judgement.name
+        return serialized
+
+    def to_serializable_dict(self):
+        return {
+            "player_name": self._player_name,
+            "song_title": getattr(self._song, "title", "Unknown Song"),
+            "song_artist": getattr(self._song, "artist", "Unknown Artist"),
+            "chart_name": getattr(self._chart, "name", "Unknown"),
+            "chart_author": getattr(self._chart, "chart_author", "Unknown"),
+            "play_number": int(self._play_number),
+            "max_base_note_raw": int(self._max_base_note_raw),
+            "max_collect_raw": int(self._max_collect_raw),
+            "max_bonus_raw": int(self._max_bonus_raw),
+            "max_combo": int(self._max_combo),
+            "base_note_raw": int(self._base_note_raw),
+            "collect_raw": int(self._collect_raw),
+            "bonus_raw": int(self._bonus_raw),
+            "current_combo": int(self._combo),
+            "highest_combo": int(self._highest_combo),
+            "base_penalty_raw": int(self._base_penalty_raw),
+            "collect_penalty_raw": int(self._collect_penalty_raw),
+            "bonus_penalty_raw": int(self._bonus_penalty_raw),
+            "total_score": int(self.current_score),
+            "recorded_note_hit": [
+                self._to_serializable_note_hit(entry) for entry in self._recorded_note_hit
+            ],
+            "recorded_player_x": list(self._recorded_player_x),
+        }
+
+    def build_result_filename(self, timestamp: datetime | None = None):
+        stamp = timestamp or datetime.now()
+        player_name = self._sanitize_filename_component(self._player_name)
+        song_title = self._sanitize_filename_component(getattr(self._song, "title", "Unknown Song"))
+        chart_name = self._sanitize_filename_component(getattr(self._chart, "name", "Unknown"))
+        datetime_part = stamp.strftime("%Y-%m-%d %H-%M-%S")
+        return f"{player_name} - {song_title} - {chart_name} - {datetime_part}.json"
+
+    def save_to_json(self, output_dir: Path | None = None, timestamp: datetime | None = None):
+        target_dir = Path(output_dir) if output_dir is not None else (self._song.folder_path / self._chart.name)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        file_name = self.build_result_filename(timestamp=timestamp)
+        file_path = target_dir / file_name
+
+        payload = self.to_serializable_dict()
+        payload["saved_at"] = (timestamp or datetime.now()).isoformat(timespec="seconds")
+
+        with open(file_path, "w", encoding="utf-8") as output_file:
+            json.dump(payload, output_file, ensure_ascii=False, indent=2)
+
+        return file_path
 
 
 

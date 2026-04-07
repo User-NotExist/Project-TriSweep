@@ -272,7 +272,7 @@ class PlaySpace(SceneBase):
 
             self._is_result_transitioned = True
             self._game_manager.force_complete_round_as_miss()
-            self.switch_to_scene(Result(self._game_manager))
+            self.switch_to_scene(Result(self._game_manager.play_data))
             return
 
         if self._skip_hold_started_ms is not None:
@@ -283,7 +283,7 @@ class PlaySpace(SceneBase):
                 self._skip_hold_started_ms = None
                 self._is_result_transitioned = True
                 self._game_manager.force_complete_round_as_miss()
-                self.switch_to_scene(Result(self._game_manager))
+                self.switch_to_scene(Result(self._game_manager.play_data))
                 return
 
         if self._game_manager.is_round_finished:
@@ -296,7 +296,7 @@ class PlaySpace(SceneBase):
             from scenes.result import Result
 
             self._is_result_transitioned = True
-            self.switch_to_scene(Result(self._game_manager))
+            self.switch_to_scene(Result(self._game_manager.play_data))
 
     def _get_skip_remaining_ms(self):
         if self._skip_hold_started_ms is None:

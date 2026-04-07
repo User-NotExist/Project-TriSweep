@@ -7,9 +7,9 @@ import pygame
 class BreakStripeNote(NoteBase):
     def __init__(self, start_stamp, end_stamp, lane, color_override):
         super().__init__(start_stamp, end_stamp, lane, 6, color_override)
-        self.base_score = 500
+        self.base_score = 400
         if self.end_time != -1:
-            self.base_score = 1000
+            self.base_score = 500
         self.bonus_score = 100
 
     def draw_note(self, width, note_speed, **kwargs):

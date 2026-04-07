@@ -1,4 +1,3 @@
-from components.local_enum.judgement_level import JudgementLevel
 from components.notes.note_base import NoteBase
 import pygame
 

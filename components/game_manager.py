@@ -84,19 +84,11 @@ class GameManager:
             if note in active_hold_notes:
                 continue
 
-            hit_error_ms = int(now_elapsed_ms - int(note.start_time))
-            if hit_error_ms <= self._hit_window_ms:
+            hit_error_ms = note.hit_error_ms(now_elapsed_ms)
+            if hit_error_ms <= int(self._hit_window_ms):
                 continue
 
-            miss_payload = {
-                "lane": int(note.lane),
-                "note": note,
-                "is_long": bool(note.is_long),
-                "hit_error_ms": hit_error_ms,
-                "timing": self._timing_label(hit_error_ms),
-                "judgement": JudgementLevel.MISS,
-                "hold_ratio": 0.0 if note.is_long else None,
-            }
+            miss_payload = note.build_miss_payload(int(note.lane), now_elapsed_ms)
             missed_payloads.append(miss_payload)
             self._record_note_judgement(miss_payload)
             self._loaded_notes.remove(note)
@@ -125,26 +117,6 @@ class GameManager:
         # Remove by object identity so resolved collect obstacles cannot linger in render/update loops.
         self._active_collect_holds.pop(id(obstacle), None)
         self._loaded_obstacles = [obj for obj in self._loaded_obstacles if obj is not obstacle]
-
-    def _judge_note(self, note: NoteBase, hit_error_ms: int, hold_ratio: Optional[float] = None):
-        if note.is_long and hold_ratio is not None:
-            return JudgementLevel.CRITPERFECT if hold_ratio >= 0.8 else JudgementLevel.GOOD
-
-        abs_error_ms = abs(int(hit_error_ms))
-        if int(getattr(note, "note_type", -1)) in {5, 6}:
-            if abs_error_ms <= int(Config.GOOD_TIMING):
-                return JudgementLevel.CRITPERFECT
-            return JudgementLevel.MISS
-
-        if abs_error_ms <= int(Config.CRITICAL_PERFECT_TIMING):
-            return JudgementLevel.CRITPERFECT
-        if abs_error_ms <= int(Config.PERFECT_TIMING):
-            return JudgementLevel.PERFECT
-        if abs_error_ms <= int(Config.GREAT_TIMING):
-            return JudgementLevel.GREAT
-        if abs_error_ms <= int(Config.GOOD_TIMING):
-            return JudgementLevel.GOOD
-        return JudgementLevel.MISS
 
     def _judge_obstacle(
         self,
@@ -258,12 +230,6 @@ class GameManager:
         return "perfect"
 
     @staticmethod
-    def _find_closest_note(candidates, target_ms):
-        if not candidates:
-            return None
-        return min(candidates, key=lambda note: abs(int(note.start_time) - int(target_ms)))
-
-    @staticmethod
     def _lane_index_from_x(
         x_position: int,
         lane_start_x: int,
@@ -307,45 +273,9 @@ class GameManager:
         source_rect = pygame.Rect(0, source_y, surface.get_width(), visible_height)
         screen.blit(surface, (lane_x, int(visible_top_y)), source_rect)
 
-    def _finalize_long_hold(self, lane_index: int, now_elapsed_ms: int):
-        hold_state = self._active_long_holds.get(lane_index)
-        if hold_state is None:
-            return None
-
-        note = hold_state["note"]
-        if hold_state["is_holding"]:
-            from_ms = max(hold_state["last_sample_ms"], int(note.start_time))
-            to_ms = min(now_elapsed_ms, int(note.end_time))
-            if to_ms > from_ms:
-                hold_state["held_ms"] += to_ms - from_ms
-
-        duration_ms = max(1, int(note.duration_ms))
-        hold_ratio = max(0.0, min(1.0, hold_state["held_ms"] / duration_ms))
-        self._active_long_holds.pop(lane_index, None)
-        if note in self._loaded_notes:
-            self._loaded_notes.remove(note)
-
-        return {
-            "lane": lane_index,
-            "note": note,
-            "is_long": True,
-            "hit_error_ms": int(hold_state["start_error_ms"]),
-            "timing": self._timing_label(int(hold_state["start_error_ms"])),
-            "judgement": self._judge_note(
-                note,
-                int(hold_state["start_error_ms"]),
-                hold_ratio=hold_ratio,
-            ),
-            "hold_ratio": hold_ratio,
-        }
-
     @property
     def current_score(self):
         return int(self._play_data.current_score)
-
-    @property
-    def max_score(self):
-        return int(sum(PlayData.PERCENTAGE_WEIGHT.values()))
 
     @property
     def decreasing_display_score(self):
@@ -354,6 +284,10 @@ class GameManager:
     @property
     def current_combo(self):
         return int(self._play_data.current_combo)
+
+    @property
+    def play_data(self):
+        return self._play_data
 
     @property
     def playing_song(self):
@@ -397,30 +331,19 @@ class GameManager:
                 self._active_long_holds.pop(lane_index, None)
                 continue
 
-            miss_payload = {
-                "lane": int(lane_index),
-                "note": note,
-                "is_long": True,
-                "hit_error_ms": int(now_elapsed_ms - int(note.start_time)),
-                "timing": self._timing_label(int(now_elapsed_ms - int(note.start_time))),
-                "judgement": JudgementLevel.MISS,
-                "hold_ratio": 0.0,
-            }
+            miss_payload = note.build_payload(
+                lane_index=int(lane_index),
+                hit_error_ms=note.hit_error_ms(now_elapsed_ms),
+                judgement=JudgementLevel.MISS,
+                hold_ratio=0.0,
+            )
             self._active_long_holds.pop(lane_index, None)
             if note in self._loaded_notes:
                 self._loaded_notes.remove(note)
             self._record_note_judgement(miss_payload)
 
         for note in self._loaded_notes.copy():
-            miss_payload = {
-                "lane": int(note.lane),
-                "note": note,
-                "is_long": bool(note.is_long),
-                "hit_error_ms": int(now_elapsed_ms - int(note.start_time)),
-                "timing": self._timing_label(int(now_elapsed_ms - int(note.start_time))),
-                "judgement": JudgementLevel.MISS,
-                "hold_ratio": 0.0 if note.is_long else None,
-            }
+            miss_payload = note.build_miss_payload(int(note.lane), now_elapsed_ms)
             self._loaded_notes.remove(note)
             self._record_note_judgement(miss_payload)
 
@@ -493,76 +416,36 @@ class GameManager:
 
         for lane_index in range(lane_count):
             lane_is_pressed = bool(lane_pressed[lane_index])
-            trigger_count = max(0, int(lane_trigger_counts[lane_index]))
+            lane_notes = [note for note in self._loaded_notes if int(note.lane) == lane_index]
+            lane_input_result = NoteBase.process_lane_input(
+                lane_index=lane_index,
+                lane_notes=lane_notes,
+                lane_is_pressed=lane_is_pressed,
+                trigger_count=max(0, int(lane_trigger_counts[lane_index])),
+                now_elapsed_ms=now_elapsed_ms,
+                hit_window_ms=int(self._hit_window_ms),
+                active_hold=self._active_long_holds.get(lane_index),
+            )
 
-            for _ in range(trigger_count):
-                lane_notes = [note for note in self._loaded_notes if int(note.lane) == lane_index]
-                closest_note = self._find_closest_note(lane_notes, now_elapsed_ms)
-                if closest_note is None:
-                    break
+            new_hold_state = lane_input_result.get("active_hold")
+            if new_hold_state is None:
+                self._active_long_holds.pop(lane_index, None)
+            else:
+                self._active_long_holds[lane_index] = new_hold_state
 
-                hit_error_ms = int(now_elapsed_ms - int(closest_note.start_time))
-                if abs(hit_error_ms) > self._hit_window_ms:
-                    break
+            for consumed_note in lane_input_result.get("consumed_notes", []):
+                if consumed_note in self._loaded_notes:
+                    self._loaded_notes.remove(consumed_note)
 
-                if closest_note.is_long:
-                    active_hold = self._active_long_holds.get(lane_index)
-                    if active_hold is not None and bool(active_hold.get("is_holding")):
-                        continue
+            for note_payload in lane_input_result.get("results", []):
+                results.append(note_payload)
 
-                    self._active_long_holds[lane_index] = {
-                        "note": closest_note,
-                        "held_ms": 0,
-                        "last_sample_ms": now_elapsed_ms,
-                        "is_holding": True,
-                        "start_error_ms": hit_error_ms,
-                    }
-                    results.append(
-                        {
-                            "lane": lane_index,
-                            "note": closest_note,
-                            "is_long": True,
-                            "hit_error_ms": hit_error_ms,
-                            "timing": self._timing_label(hit_error_ms),
-                            "judgement": self._judge_note(closest_note, hit_error_ms),
-                            "hold_ratio": None,
-                        }
-                    )
-                    continue
-
-                self._loaded_notes.remove(closest_note)
-                tap_payload = {
-                    "lane": lane_index,
-                    "note": closest_note,
-                    "is_long": False,
-                    "hit_error_ms": hit_error_ms,
-                    "timing": self._timing_label(hit_error_ms),
-                    "judgement": self._judge_note(closest_note, hit_error_ms),
-                    "hold_ratio": None,
-                }
-                results.append(tap_payload)
-                self._record_note_judgement(tap_payload)
-
-            hold_state = self._active_long_holds.get(lane_index)
-            if hold_state is not None:
-                note = hold_state["note"]
-                note_end_ms = int(note.end_time)
-
-                if hold_state["is_holding"] and lane_is_pressed:
-                    from_ms = max(hold_state["last_sample_ms"], int(note.start_time))
-                    to_ms = min(now_elapsed_ms, note_end_ms)
-                    if to_ms > from_ms:
-                        hold_state["held_ms"] += to_ms - from_ms
-                    hold_state["last_sample_ms"] = now_elapsed_ms
-
-                if not lane_is_pressed and hold_state["is_holding"]:
-                    hold_state["is_holding"] = False
-
-                if now_elapsed_ms >= note_end_ms or not lane_is_pressed:
-                    finalized = self._finalize_long_hold(lane_index, now_elapsed_ms)
-                    if finalized is not None:
-                        results.append(finalized)
-                        self._record_note_judgement(finalized)
+                # Start-long events are preview payloads for HUD timing feedback, not final scoring.
+                should_record = not (
+                    bool(note_payload.get("is_long")) and note_payload.get("hold_ratio") is None
+                )
+                if should_record:
+                    self._record_note_judgement(note_payload)
 
             self._previous_lane_pressed[lane_index] = lane_is_pressed
 
@@ -679,6 +562,11 @@ class GameManager:
         note_speed_px_per_ms = note_speed / 1000.0
         screen_height = screen.get_height()
         player = self._player
+        self._play_data.record_player_x(
+            player_x=player.x_position,
+            timestamp_ms=elapsed_ms,
+            center_x=(screen.get_width() / 2.0),
+        )
         player_width = max(player.sprite_pixel_size[0], int(lane_width * player.SPRITE_WIDTH_RATIO))
         player_left_x = int(player.x_position) - (player_width // 2)
         player_right_x = player_left_x + player_width
@@ -704,15 +592,7 @@ class GameManager:
 
                 late_ms = int(elapsed_ms - int(note.start_time))
                 if late_ms > self._hit_window_ms:
-                    miss_payload = {
-                        "lane": int(note.lane),
-                        "note": note,
-                        "is_long": bool(note.is_long),
-                        "hit_error_ms": late_ms,
-                        "timing": self._timing_label(late_ms),
-                        "judgement": JudgementLevel.MISS,
-                        "hold_ratio": 0.0 if note.is_long else None,
-                    }
+                    miss_payload = note.build_miss_payload(int(note.lane), elapsed_ms)
                     self._record_note_judgement(miss_payload)
                     self._loaded_notes.remove(note)
                 continue

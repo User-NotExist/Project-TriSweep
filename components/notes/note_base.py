@@ -1,6 +1,7 @@
 from components.local_enum.judgement_level import JudgementLevel
 from config import Config
 import pygame
+from typing import Optional
 
 
 class NoteBase:
@@ -136,6 +137,178 @@ class NoteBase:
 
         self.validation_errors.append(f"Invalid color_override: {color_override}; using default color")
         return None
+
+    @staticmethod
+    def timing_label(hit_error_ms: int):
+        if hit_error_ms < 0:
+            return "early"
+        if hit_error_ms > 0:
+            return "late"
+        return "perfect"
+
+    @staticmethod
+    def find_closest_note(candidates, target_ms):
+        if not candidates:
+            return None
+        return min(candidates, key=lambda note: abs(int(note.start_time) - int(target_ms)))
+
+    def hit_error_ms(self, now_elapsed_ms: int):
+        return int(now_elapsed_ms - int(self.start_time))
+
+    def is_within_hit_window(self, now_elapsed_ms: int, hit_window_ms: int):
+        return abs(self.hit_error_ms(now_elapsed_ms)) <= int(hit_window_ms)
+
+    def judge_input(self, hit_error_ms: int, hold_ratio: Optional[float] = None):
+        if self.is_long and hold_ratio is not None:
+            return JudgementLevel.CRITPERFECT if hold_ratio >= 0.8 else JudgementLevel.GOOD
+
+        abs_error_ms = abs(int(hit_error_ms))
+        if int(getattr(self, "note_type", -1)) in {5, 6}:
+            if abs_error_ms <= int(Config.GOOD_TIMING):
+                return JudgementLevel.CRITPERFECT
+            return JudgementLevel.MISS
+
+        if abs_error_ms <= int(Config.CRITICAL_PERFECT_TIMING):
+            return JudgementLevel.CRITPERFECT
+        if abs_error_ms <= int(Config.PERFECT_TIMING):
+            return JudgementLevel.PERFECT
+        if abs_error_ms <= int(Config.GREAT_TIMING):
+            return JudgementLevel.GREAT
+        if abs_error_ms <= int(Config.GOOD_TIMING):
+            return JudgementLevel.GOOD
+        return JudgementLevel.MISS
+
+    def build_payload(
+        self,
+        lane_index: int,
+        hit_error_ms: int,
+        judgement=None,
+        hold_ratio: Optional[float] = None,
+    ):
+        resolved_judgement = judgement
+        if resolved_judgement is None:
+            resolved_judgement = self.judge_input(hit_error_ms, hold_ratio=hold_ratio)
+
+        return {
+            "lane": int(lane_index),
+            "note": self,
+            "is_long": bool(self.is_long),
+            "hit_error_ms": int(hit_error_ms),
+            "timing": self.timing_label(int(hit_error_ms)),
+            "judgement": resolved_judgement,
+            "hold_ratio": hold_ratio,
+        }
+
+    def build_miss_payload(self, lane_index: int, now_elapsed_ms: int):
+        return self.build_payload(
+            lane_index=lane_index,
+            hit_error_ms=self.hit_error_ms(now_elapsed_ms),
+            judgement=JudgementLevel.MISS,
+            hold_ratio=0.0 if self.is_long else None,
+        )
+
+    def begin_long_hold(self, now_elapsed_ms: int, hit_error_ms: int):
+        return {
+            "note": self,
+            "held_ms": 0,
+            "last_sample_ms": int(now_elapsed_ms),
+            "is_holding": True,
+            "start_error_ms": int(hit_error_ms),
+        }
+
+    def update_long_hold(self, hold_state: dict, now_elapsed_ms: int, lane_is_pressed: bool):
+        note_end_ms = int(self.end_time)
+        if bool(hold_state.get("is_holding")) and lane_is_pressed:
+            from_ms = max(int(hold_state.get("last_sample_ms", now_elapsed_ms)), int(self.start_time))
+            to_ms = min(int(now_elapsed_ms), note_end_ms)
+            if to_ms > from_ms:
+                hold_state["held_ms"] = int(hold_state.get("held_ms", 0)) + (to_ms - from_ms)
+            hold_state["last_sample_ms"] = int(now_elapsed_ms)
+
+        if not lane_is_pressed and bool(hold_state.get("is_holding")):
+            hold_state["is_holding"] = False
+
+    def should_finalize_long_hold(self, now_elapsed_ms: int, lane_is_pressed: bool):
+        return int(now_elapsed_ms) >= int(self.end_time) or not lane_is_pressed
+
+    def finalize_long_hold(self, hold_state: dict, lane_index: int, now_elapsed_ms: int):
+        if bool(hold_state.get("is_holding")):
+            from_ms = max(int(hold_state.get("last_sample_ms", now_elapsed_ms)), int(self.start_time))
+            to_ms = min(int(now_elapsed_ms), int(self.end_time))
+            if to_ms > from_ms:
+                hold_state["held_ms"] = int(hold_state.get("held_ms", 0)) + (to_ms - from_ms)
+
+        duration_ms = max(1, int(self.duration_ms))
+        hold_ratio = max(0.0, min(1.0, int(hold_state.get("held_ms", 0)) / duration_ms))
+        return self.build_payload(
+            lane_index=lane_index,
+            hit_error_ms=int(hold_state.get("start_error_ms", 0)),
+            hold_ratio=hold_ratio,
+        )
+
+    @classmethod
+    def process_lane_input(
+        cls,
+        lane_index: int,
+        lane_notes,
+        lane_is_pressed: bool,
+        trigger_count: int,
+        now_elapsed_ms: int,
+        hit_window_ms: int,
+        active_hold,
+    ):
+        lane_notes = list(lane_notes)
+        consumed_notes = []
+        results = []
+        hold_state = active_hold
+
+        for _ in range(max(0, int(trigger_count))):
+            closest_note = cls.find_closest_note(lane_notes, now_elapsed_ms)
+            if closest_note is None:
+                break
+
+            hit_error_ms = closest_note.hit_error_ms(now_elapsed_ms)
+            if abs(hit_error_ms) > int(hit_window_ms):
+                break
+
+            if closest_note.is_long:
+                if hold_state is not None and bool(hold_state.get("is_holding")):
+                    continue
+
+                hold_state = closest_note.begin_long_hold(now_elapsed_ms, hit_error_ms)
+                results.append(
+                    closest_note.build_payload(
+                        lane_index=lane_index,
+                        hit_error_ms=hit_error_ms,
+                        hold_ratio=None,
+                    )
+                )
+                continue
+
+            lane_notes.remove(closest_note)
+            consumed_notes.append(closest_note)
+            results.append(
+                closest_note.build_payload(
+                    lane_index=lane_index,
+                    hit_error_ms=hit_error_ms,
+                    hold_ratio=None,
+                )
+            )
+
+        if hold_state is not None:
+            held_note = hold_state.get("note")
+            if held_note is not None:
+                held_note.update_long_hold(hold_state, now_elapsed_ms, lane_is_pressed)
+                if held_note.should_finalize_long_hold(now_elapsed_ms, lane_is_pressed):
+                    results.append(held_note.finalize_long_hold(hold_state, lane_index, now_elapsed_ms))
+                    consumed_notes.append(held_note)
+                    hold_state = None
+
+        return {
+            "results": results,
+            "consumed_notes": consumed_notes,
+            "active_hold": hold_state,
+        }
 
     def draw_note(self, width, note_speed, **kwargs):
         """

@@ -1,7 +1,6 @@
 import math
 from components.local_enum.judgement_level import JudgementLevel
 from components.notes.note_base import NoteBase
-import pygame
 
 from config import Config
 
@@ -9,13 +8,11 @@ from config import Config
 class BreakNote(NoteBase):
     def __init__(self, start_stamp, end_stamp, lane, color_override):
         super().__init__(start_stamp, end_stamp, lane, 2, color_override)
-        self.base_score = 500
+        self.base_score = 400
         if self.end_time != -1:
-            self.base_score = 1000
+            self.base_score = 500
         self.bonus_score = 100
 
-    def draw_note(self, width, note_speed, **kwargs):
-        return super().draw_note(width, note_speed, **kwargs)
 
     def get_score(self, judgement : JudgementLevel, **kwargs):
         hit_error_ms = kwargs.get("hit_error", 0)
