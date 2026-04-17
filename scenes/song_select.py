@@ -1,5 +1,6 @@
 import pygame
 import math
+import json
 
 from pathlib import Path
 from components.song import Song
@@ -75,6 +76,9 @@ class SongSelect(SceneBase):
         self.sidebar_title_font = self._create_font(26, bold=True)
         self.sidebar_artist_font = self._create_font(18)
         self.diff_font = self._create_font(16, bold=True)
+        self.record_title_font = self._create_font(26, bold=True)
+        self.record_header_font = self._create_font(15, bold=True)
+        self.record_row_font = self._create_font(14)
 
         self.marquee_speed_px_per_sec = 45
         self.marquee_gap_px = 60
@@ -93,6 +97,19 @@ class SongSelect(SceneBase):
         self._preview_loaded_path = None
         self._preview_enabled = True
         self._preview_is_fading_out = False
+
+        self.show_play_records = False
+        self._play_record_cache_key = None
+        self._selected_play_records = []
+        self._record_sort_key = None
+        self._record_sort_order = "desc"
+        self._record_header_hitboxes = []
+        self._record_columns = [
+            ("player_name", "Player", 0.38, False),
+            ("play_number", "Play", 0.18, True),
+            ("total_score", "Total Score", 0.24, True),
+            ("highest_combo", "Highest Combo", 0.20, True),
+        ]
 
         self.preview_fade_in_ms = 250
         self.preview_fade_out_ms = 250
@@ -204,6 +221,102 @@ class SongSelect(SceneBase):
                 self.songs.append(song)
 
         self._apply_sort()
+
+    @staticmethod
+    def _safe_int(value, fallback=0):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    def _get_selected_song_and_chart(self):
+        if not self.songs:
+            return None, None
+
+        song = self.songs[max(0, min(self.selected_index, len(self.songs) - 1))]
+        charts = song.difficulty
+        if not charts:
+            return song, None
+
+        chart_index = max(0, min(self.selected_difficulty_index, len(charts) - 1))
+        return song, charts[chart_index]
+
+    def _load_selected_play_records(self, force=False):
+        song, chart = self._get_selected_song_and_chart()
+        cache_key = None if song is None or chart is None else (str(song.folder_path), chart.name)
+
+        if not force and cache_key == self._play_record_cache_key:
+            return
+
+        self._play_record_cache_key = cache_key
+        self._selected_play_records = []
+
+        if song is None or chart is None:
+            return
+
+        record_dir = song.folder_path / chart.name
+        if not record_dir.exists() or not record_dir.is_dir():
+            return
+
+        try:
+            record_files = sorted(record_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        except OSError:
+            return
+
+        for record_path in record_files:
+            try:
+                with open(record_path, "r", encoding="utf-8") as record_file:
+                    payload = json.load(record_file)
+            except Exception as error:
+                print(f"Warning: Failed to read play record '{record_path}': {error}")
+                continue
+
+            total_score = payload.get("total_score", payload.get("current_score", 0))
+            self._selected_play_records.append(
+                {
+                    "player_name": str(payload.get("player_name", "UNKNOWN")),
+                    "play_number": self._safe_int(payload.get("play_number"), 0),
+                    "total_score": self._safe_int(total_score, 0),
+                    "highest_combo": self._safe_int(payload.get("highest_combo"), 0),
+                }
+            )
+
+        if self._record_sort_key is None:
+            self._selected_play_records.sort(
+                key=lambda row: (row["play_number"], row["total_score"], row["highest_combo"]),
+                reverse=True,
+            )
+        else:
+            self._sort_selected_play_records()
+
+    def _sort_selected_play_records(self):
+        if not self._selected_play_records or not self._record_sort_key:
+            return
+
+        reverse = self._record_sort_order == "desc"
+        if self._record_sort_key == "player_name":
+            self._selected_play_records.sort(
+                key=lambda row: str(row.get("player_name", "")).casefold(),
+                reverse=reverse,
+            )
+            return
+
+        self._selected_play_records.sort(
+            key=lambda row: self._safe_int(row.get(self._record_sort_key), 0),
+            reverse=reverse,
+        )
+
+    def _handle_record_table_click(self, pos):
+        for key, rect in self._record_header_hitboxes:
+            if rect.collidepoint(pos):
+                if self._record_sort_key == key:
+                    self._record_sort_order = "asc" if self._record_sort_order == "desc" else "desc"
+                else:
+                    self._record_sort_key = key
+                    self._record_sort_order = "desc"
+                self._sort_selected_play_records()
+                return True
+        return False
 
     def _sort_label(self, options, value):
         for option_value, option_label in options:
@@ -516,7 +629,24 @@ class SongSelect(SceneBase):
         if clamped != self.selected_index:
             self.selected_index = clamped
             self.selected_difficulty_index = 0
+            self._play_record_cache_key = None
             self._start_selected_preview()
+
+    def _set_selected_difficulty_index(self, new_index):
+        if not self.songs:
+            return
+
+        selected_song = self.songs[self.selected_index]
+        charts = selected_song.difficulty
+        if not charts:
+            self.selected_difficulty_index = 0
+            self._play_record_cache_key = None
+            return
+
+        clamped = max(0, min(new_index, len(charts) - 1))
+        if clamped != self.selected_difficulty_index:
+            self.selected_difficulty_index = clamped
+            self._play_record_cache_key = None
 
     def _start_selected_chart(self):
         if not self.songs:
@@ -542,6 +672,11 @@ class SongSelect(SceneBase):
     def process_input(self, events):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.show_play_records:
+                    if event.button == 1:
+                        self._handle_record_table_click(event.pos)
+                    continue
+
                 if event.button == 1:
                     if self._handle_sort_click(event.pos):
                         continue
@@ -552,7 +687,7 @@ class SongSelect(SceneBase):
 
                     picked_diff = self._difficulty_card_at_pos(event.pos)
                     if picked_diff is not None:
-                        self.selected_difficulty_index = picked_diff
+                        self._set_selected_difficulty_index(picked_diff)
                         continue
 
                     picked_song = self._card_at_pos(event.pos)
@@ -567,6 +702,17 @@ class SongSelect(SceneBase):
                     self._rebuild_for_scroll()
 
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_TAB:
+                    self.show_play_records = not self.show_play_records
+                    if self.show_play_records:
+                        self._load_selected_play_records(force=True)
+                    continue
+
+                if self.show_play_records:
+                    if event.key == pygame.K_ESCAPE:
+                        self.show_play_records = False
+                    continue
+
                 if event.key == pygame.K_LEFT and self.songs:
                     self._set_selected_index(self.selected_index - 1)
                 elif event.key == pygame.K_RIGHT and self.songs:
@@ -596,9 +742,13 @@ class SongSelect(SceneBase):
         self.selected_index = max(0, min(self.selected_index, len(self.songs) - 1))
         current_charts = self.songs[self.selected_index].difficulty
         if current_charts:
-            self.selected_difficulty_index = max(0, min(self.selected_difficulty_index, len(current_charts) - 1))
+            new_index = max(0, min(self.selected_difficulty_index, len(current_charts) - 1))
+            if new_index != self.selected_difficulty_index:
+                self.selected_difficulty_index = new_index
+                self._play_record_cache_key = None
         else:
             self.selected_difficulty_index = 0
+            self._play_record_cache_key = None
 
         if self._preview_song_index != self.selected_index:
             self._start_selected_preview()
@@ -852,3 +1002,95 @@ class SongSelect(SceneBase):
         screen.fill(self.background_color)
         self._render_grid(screen)
         self._render_sidebar(screen, height)
+        self._render_play_record_table(screen)
+
+    def _render_play_record_table(self, screen):
+        self._record_header_hitboxes = []
+        if not self.show_play_records:
+            return
+
+        self._load_selected_play_records()
+        if not self._selected_play_records:
+            return
+
+        width, height = screen.get_size()
+        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+        overlay.fill((8, 12, 19, 170))
+        screen.blit(overlay, (0, 0))
+
+        panel_margin_x = 56
+        panel_margin_y = 56
+        panel_rect = pygame.Rect(
+            panel_margin_x,
+            panel_margin_y,
+            max(320, width - panel_margin_x * 2),
+            max(220, height - panel_margin_y * 2),
+        )
+
+        pygame.draw.rect(screen, (24, 30, 43), panel_rect, border_radius=12)
+        pygame.draw.rect(screen, (95, 105, 133), panel_rect, width=2, border_radius=12)
+
+        song, chart = self._get_selected_song_and_chart()
+        title_text = "Play Records"
+        if chart is not None:
+            title_text = f"Play Records - {chart.name}"
+
+        title_surface = self.record_title_font.render(title_text, True, self.text_color)
+        screen.blit(title_surface, (panel_rect.x + 20, panel_rect.y + 14))
+
+        hint_surface = self.small_font.render("TAB to hide", True, self.subtle_text_color)
+        screen.blit(hint_surface, hint_surface.get_rect(topright=(panel_rect.right - 20, panel_rect.y + 22)))
+
+        table_left = panel_rect.x + 20
+        table_right = panel_rect.right - 20
+        header_y = panel_rect.y + 58
+        row_height = 30
+
+        total_width = table_right - table_left
+        x_cursor = table_left
+        column_rects = []
+        for index, (_key, _label, ratio, _align_right) in enumerate(self._record_columns):
+            col_w = int(total_width * ratio)
+            if index == len(self._record_columns) - 1:
+                col_w = table_right - x_cursor
+            column_rects.append(pygame.Rect(x_cursor, header_y, col_w, row_height))
+            x_cursor += col_w
+
+        for (key, label, _ratio, align_right), col_rect in zip(self._record_columns, column_rects):
+            is_sorted = key == self._record_sort_key
+            indicator = ""
+            if is_sorted:
+                indicator = " v" if self._record_sort_order == "desc" else " ^"
+            header_surface = self.record_header_font.render(f"{label}{indicator}", True, self.text_color)
+            if align_right:
+                header_pos = header_surface.get_rect(midright=(col_rect.right - 8, col_rect.centery))
+            else:
+                header_pos = header_surface.get_rect(midleft=(col_rect.left + 8, col_rect.centery))
+            screen.blit(header_surface, header_pos)
+            self._record_header_hitboxes.append((key, col_rect.copy()))
+
+        pygame.draw.line(screen, (95, 105, 133), (table_left, header_y + row_height), (table_right, header_y + row_height), 2)
+
+        rows_start_y = header_y + row_height + 6
+        available_h = panel_rect.bottom - 20 - rows_start_y
+        max_rows = max(1, available_h // row_height)
+        visible_rows = self._selected_play_records[:max_rows]
+
+        for row_index, row in enumerate(visible_rows):
+            row_y = rows_start_y + row_index * row_height
+            if row_index % 2 == 0:
+                pygame.draw.rect(
+                    screen,
+                    (29, 36, 51),
+                    pygame.Rect(table_left, row_y, total_width, row_height),
+                    border_radius=4,
+                )
+
+            for (key, _label, _ratio, align_right), col_rect in zip(self._record_columns, column_rects):
+                value_text = str(row.get(key, ""))
+                row_surface = self.record_row_font.render(value_text, True, self.text_color)
+                if align_right:
+                    row_pos = row_surface.get_rect(midright=(col_rect.right - 8, row_y + row_height // 2))
+                else:
+                    row_pos = row_surface.get_rect(midleft=(col_rect.left + 8, row_y + row_height // 2))
+                screen.blit(row_surface, row_pos)
