@@ -28,9 +28,27 @@ class Chart:
         self.level = diff_meta.get("level", 0)
         self.chart_author = diff_meta.get("chart_author", "Unknown")
         self.chart_path = path_to_folder / diff_meta.get("chart_path", "")
+        self.forced_note_speed = self._coerce_forced_note_speed(diff_meta.get("forced_note_speed"))
         self._is_chart_initialized = False
         self._notes = []
         self._obstacles = []
+
+    @staticmethod
+    def _coerce_forced_note_speed(value):
+        if value in (None, ""):
+            return None
+
+        try:
+            note_speed = float(value)
+        except (TypeError, ValueError):
+            print(f"[Chart] Invalid forced_note_speed '{value}', ignoring")
+            return None
+
+        if note_speed <= 0:
+            print(f"[Chart] forced_note_speed must be > 0, got '{value}', ignoring")
+            return None
+
+        return note_speed
 
     @property
     def notes(self):

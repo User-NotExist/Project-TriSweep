@@ -43,6 +43,18 @@ class GameManager:
 
         self.__starting_ms = None
 
+    def _resolve_lane_speed_scalar(self):
+        forced_speed = getattr(self._playing_chart, "forced_note_speed", None)
+        if forced_speed is not None:
+            try:
+                forced_value = float(forced_speed)
+                if forced_value > 0:
+                    return forced_value
+            except (TypeError, ValueError):
+                pass
+
+        return float(Config.PLAYER_LANE_SPEED)
+
     def _publish_judgement(self, payload: dict):
         self._last_judgement_payload = {
             "source": payload.get("source", "unknown"),
@@ -228,7 +240,7 @@ class GameManager:
         if self._is_chart_lead_in_initialized:
             return
 
-        note_speed = max(1.0, float(Config.PLAYER_LANE_SPEED)) * 100.0
+        note_speed = max(1.0, self._resolve_lane_speed_scalar()) * 100.0
         note_speed_px_per_ms = note_speed / 1000.0
         if note_speed_px_per_ms <= 0.0:
             self._chart_lead_in_ms = 0
@@ -583,9 +595,12 @@ class GameManager:
         self._last_tick_ms = self.__starting_ms
         self._music_fade_due_ms = None
         self._music_fade_started = False
-        self._music_start_due_ms = self.__starting_ms
         if judgement_y is not None:
             self._initialize_chart_lead_in(int(judgement_y))
+
+        # Start music after lead-in so chart time 0 aligns with music time 0.
+        music_offset_ms = int(getattr(Config, "OFFSET_MUSIC", 0))
+        self._music_start_due_ms = self.__starting_ms + int(self._chart_lead_in_ms) + music_offset_ms
 
     def update_game(
         self,
@@ -596,7 +611,7 @@ class GameManager:
         judgement_y: int,
     ):
         if not self._is_playing or self.__starting_ms is None:
-            self.start_game()
+            self.start_game(judgement_y)
 
         now_ms = pygame.time.get_ticks()
         self._update_music_start(now_ms)
@@ -613,7 +628,7 @@ class GameManager:
         self._last_tick_ms = now_ms
 
         # Config value is a gameplay scalar; convert to practical px/s for visible scrolling.
-        note_speed = max(1.0, float(Config.PLAYER_LANE_SPEED)) * 100.0
+        note_speed = max(1.0, self._resolve_lane_speed_scalar()) * 100.0
         # Keep timing units consistent with NoteBase.draw_note (pixels/second -> pixels/ms).
         note_speed_px_per_ms = note_speed / 1000.0
         screen_height = screen.get_height()

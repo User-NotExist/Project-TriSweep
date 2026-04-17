@@ -503,7 +503,7 @@ class PlaySpace(SceneBase):
         countdown_seconds = self._get_countdown_seconds_remaining()
 
         if not self._is_game_started and self._is_countdown_and_flash_complete():
-            self._game_manager.start_game()
+            self._game_manager.start_game(judgement_y)
             self._is_game_started = True
 
         if self._is_game_started and not self._is_dead:
