@@ -104,6 +104,7 @@ class SongSelect(SceneBase):
         self._record_sort_key = None
         self._record_sort_order = "desc"
         self._record_header_hitboxes = []
+        self._record_row_hitboxes = []
         self._record_columns = [
             ("player_name", "Player", 0.38, False),
             ("play_number", "Play", 0.18, True),
@@ -278,6 +279,8 @@ class SongSelect(SceneBase):
                     "play_number": self._safe_int(payload.get("play_number"), 0),
                     "total_score": self._safe_int(total_score, 0),
                     "highest_combo": self._safe_int(payload.get("highest_combo"), 0),
+                    "_record_payload": payload,
+                    "_record_path": str(record_path),
                 }
             )
 
@@ -316,6 +319,27 @@ class SongSelect(SceneBase):
                     self._record_sort_order = "desc"
                 self._sort_selected_play_records()
                 return True
+
+        for row_rect, row in self._record_row_hitboxes:
+            if row_rect.collidepoint(pos):
+                payload = row.get("_record_payload")
+                if isinstance(payload, dict):
+                    song, chart = self._get_selected_song_and_chart()
+                    if song is None or chart is None:
+                        return True
+
+                    from scenes.result import Result
+
+                    self.switch_to_scene(
+                        Result(
+                            None,
+                            serialized_record=payload,
+                            song=song,
+                            chart=chart,
+                            result_file_path=row.get("_record_path"),
+                        )
+                    )
+                    return True
         return False
 
     def _sort_label(self, options, value):
@@ -1006,6 +1030,7 @@ class SongSelect(SceneBase):
 
     def _render_play_record_table(self, screen):
         self._record_header_hitboxes = []
+        self._record_row_hitboxes = []
         if not self.show_play_records:
             return
 
@@ -1075,16 +1100,25 @@ class SongSelect(SceneBase):
         available_h = panel_rect.bottom - 20 - rows_start_y
         max_rows = max(1, available_h // row_height)
         visible_rows = self._selected_play_records[:max_rows]
+        mouse_pos = pygame.mouse.get_pos()
 
         for row_index, row in enumerate(visible_rows):
             row_y = rows_start_y + row_index * row_height
+            row_rect = pygame.Rect(table_left, row_y, total_width, row_height)
+            is_hovered = row_rect.collidepoint(mouse_pos)
             if row_index % 2 == 0:
                 pygame.draw.rect(
                     screen,
                     (29, 36, 51),
-                    pygame.Rect(table_left, row_y, total_width, row_height),
+                    row_rect,
                     border_radius=4,
                 )
+
+            if is_hovered:
+                pygame.draw.rect(screen, (52, 66, 94), row_rect, border_radius=4)
+                pygame.draw.rect(screen, (121, 165, 255), row_rect, width=2, border_radius=4)
+
+            self._record_row_hitboxes.append((row_rect, row))
 
             for (key, _label, _ratio, align_right), col_rect in zip(self._record_columns, column_rects):
                 value_text = str(row.get(key, ""))

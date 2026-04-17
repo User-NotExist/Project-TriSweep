@@ -3,6 +3,7 @@ import pygame
 from components.scene_base import SceneBase
 from components.play_data import PlayData
 from components.local_enum.judgement_level import JudgementLevel
+from pathlib import Path
 
 
 class Result(SceneBase):
@@ -35,20 +36,34 @@ class Result(SceneBase):
 	]
 
 	JUDGEMENT_COLORS = {
-		JudgementLevel.CRITPERFECT.name: (247, 255, 120),
-		JudgementLevel.PERFECT.name: (126, 241, 132),
-		JudgementLevel.GREAT.name: (103, 171, 255),
-		JudgementLevel.GOOD.name: (255, 191, 98),
-		JudgementLevel.MISS.name: (255, 94, 94),
+		JudgementLevel.CRITPERFECT.name: (252, 227, 3),
+		JudgementLevel.PERFECT.name: (222, 159, 22),
+		JudgementLevel.GREAT.name: (234, 72, 240),
+		JudgementLevel.GOOD.name: (84, 227, 27),
+		JudgementLevel.MISS.name: (255, 110, 110),
 	}
 
-	def __init__(self, play_data: PlayData):
+	def __init__(
+		self,
+		play_data: PlayData | None,
+		serialized_record: dict | None = None,
+		song=None,
+		chart=None,
+		result_file_path: str | None = None,
+	):
 		super().__init__()
 		self._play_data = play_data
-		self._result_file_path = self._play_data.save_to_json()
-		self._song = self._play_data.song
-		self._chart = self._play_data.chart
-		self._serialized = self._play_data.to_serializable_dict()
+
+		if self._play_data is not None:
+			self._result_file_path = self._play_data.save_to_json()
+			self._song = self._play_data.song
+			self._chart = self._play_data.chart
+			self._serialized = self._play_data.to_serializable_dict()
+		else:
+			self._serialized = dict(serialized_record or {})
+			self._song = song
+			self._chart = chart
+			self._result_file_path = Path(result_file_path) if result_file_path else None
 
 		self._background_color = (18, 22, 31)
 		self._panel_color = (26, 31, 43)
@@ -111,12 +126,25 @@ class Result(SceneBase):
 		}
 		return color_map.get(key, (194, 200, 214))
 
+	def _display_song_title(self):
+		if self._song is not None:
+			return getattr(self._song, "title", "Unknown Song")
+		return str(self._serialized.get("song_title", "Unknown Song"))
+
+	def _display_chart_name(self):
+		if self._chart is not None:
+			return getattr(self._chart, "name", "Unknown Chart")
+		return str(self._serialized.get("chart_name", "Unknown Chart"))
+
 	def _go_to_song_select(self):
 		from scenes.song_select import SongSelect
 
 		self.switch_to_scene(SongSelect())
 
 	def _retry_chart(self):
+		if self._song is None or self._chart is None:
+			return
+
 		from scenes.loading import Loading
 
 		self.switch_to_scene(
@@ -135,7 +163,8 @@ class Result(SceneBase):
 			return fallback
 
 	def _extract_metrics(self):
-		total_score = self._safe_int(self._serialized.get("total_score"), self._safe_int(self._play_data.current_score))
+		fallback_score = self._safe_int(self._play_data.current_score) if self._play_data is not None else 0
+		total_score = self._safe_int(self._serialized.get("total_score"), fallback_score)
 		max_score = sum(PlayData.PERCENTAGE_WEIGHT.values())
 		score_ratio = (float(total_score) / float(max_score)) if max_score > 0 else 0.0
 		overall_score = float(total_score) / 10000.0
@@ -170,8 +199,10 @@ class Result(SceneBase):
 		clear_rate = (float(non_miss) / float(total_notes) * 100.0) if total_notes > 0 else 0.0
 		avg_hit_error = (sum(hit_errors) / len(hit_errors)) if hit_errors else 0.0
 
-		highest_combo = self._safe_int(self._serialized.get("highest_combo"), self._safe_int(self._play_data.highest_combo))
-		max_combo = self._safe_int(self._serialized.get("max_combo"), self._safe_int(self._play_data.max_combo))
+		fallback_highest_combo = self._safe_int(self._play_data.highest_combo) if self._play_data is not None else 0
+		fallback_max_combo = self._safe_int(self._play_data.max_combo) if self._play_data is not None else 0
+		highest_combo = self._safe_int(self._serialized.get("highest_combo"), fallback_highest_combo)
+		max_combo = self._safe_int(self._serialized.get("max_combo"), fallback_max_combo)
 		combo_rate = (float(highest_combo) / float(max_combo) * 100.0) if max_combo > 0 else 0.0
 
 		return {
@@ -320,8 +351,8 @@ class Result(SceneBase):
 		title = self._title_font.render("Result Dashboard", True, self._text_color)
 		screen.blit(title, title.get_rect(midtop=(panel.centerx, panel.y + 18)))
 
-		song_title = getattr(self._song, "title", "Unknown Song")
-		chart_name = getattr(self._chart, "name", "Unknown Chart")
+		song_title = self._display_song_title()
+		chart_name = self._display_chart_name()
 		subtitle = self._small_font.render(f"{song_title}  |  {chart_name}", True, self._subtle_text_color)
 		screen.blit(subtitle, subtitle.get_rect(midtop=(panel.centerx, panel.y + 58)))
 
@@ -333,7 +364,8 @@ class Result(SceneBase):
 		else:
 			self._draw_placeholder_tab(screen, panel)
 
-		footnote = self._small_font.render(f"Saved: {self._result_file_path.name}", True, self._subtle_text_color)
+		saved_name = self._result_file_path.name if self._result_file_path is not None else "Loaded from history"
+		footnote = self._small_font.render(f"Saved: {saved_name}", True, self._subtle_text_color)
 		screen.blit(footnote, (24, panel.bottom - 84))
 
 		button_width = 220
