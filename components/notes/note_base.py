@@ -184,6 +184,7 @@ class NoteBase:
         hit_error_ms: int,
         judgement=None,
         hold_ratio: Optional[float] = None,
+        pressed_side: int = -1,
     ):
         resolved_judgement = judgement
         if resolved_judgement is None:
@@ -197,6 +198,7 @@ class NoteBase:
             "timing": self.timing_label(int(hit_error_ms)),
             "judgement": resolved_judgement,
             "hold_ratio": hold_ratio,
+            "pressed_side": int(pressed_side),
         }
 
     def build_miss_payload(self, lane_index: int, now_elapsed_ms: int):
@@ -205,15 +207,17 @@ class NoteBase:
             hit_error_ms=self.hit_error_ms(now_elapsed_ms),
             judgement=JudgementLevel.MISS,
             hold_ratio=0.0 if self.is_long else None,
+            pressed_side=-1,
         )
 
-    def begin_long_hold(self, now_elapsed_ms: int, hit_error_ms: int):
+    def begin_long_hold(self, now_elapsed_ms: int, hit_error_ms: int, pressed_side: int = -1):
         return {
             "note": self,
             "held_ms": 0,
             "last_sample_ms": int(now_elapsed_ms),
             "is_holding": True,
             "start_error_ms": int(hit_error_ms),
+            "start_pressed_side": int(pressed_side),
         }
 
     def update_long_hold(self, hold_state: dict, now_elapsed_ms: int, lane_is_pressed: bool):
@@ -244,6 +248,7 @@ class NoteBase:
             lane_index=lane_index,
             hit_error_ms=int(hold_state.get("start_error_ms", 0)),
             hold_ratio=hold_ratio,
+            pressed_side=int(hold_state.get("start_pressed_side", -1)),
         )
 
     @classmethod
@@ -253,6 +258,7 @@ class NoteBase:
         lane_notes,
         lane_is_pressed: bool,
         trigger_count: int,
+        trigger_sides,
         now_elapsed_ms: int,
         hit_window_ms: int,
         active_hold,
@@ -262,7 +268,14 @@ class NoteBase:
         results = []
         hold_state = active_hold
 
-        for _ in range(max(0, int(trigger_count))):
+        trigger_total = max(0, int(trigger_count))
+        normalized_trigger_sides = list(trigger_sides or [])
+
+        for trigger_index in range(trigger_total):
+            pressed_side = -1
+            if trigger_index < len(normalized_trigger_sides):
+                pressed_side = int(normalized_trigger_sides[trigger_index])
+
             closest_note = cls.find_closest_note(lane_notes, now_elapsed_ms)
             if closest_note is None:
                 break
@@ -275,12 +288,17 @@ class NoteBase:
                 if hold_state is not None and bool(hold_state.get("is_holding")):
                     continue
 
-                hold_state = closest_note.begin_long_hold(now_elapsed_ms, hit_error_ms)
+                hold_state = closest_note.begin_long_hold(
+                    now_elapsed_ms,
+                    hit_error_ms,
+                    pressed_side=pressed_side,
+                )
                 results.append(
                     closest_note.build_payload(
                         lane_index=lane_index,
                         hit_error_ms=hit_error_ms,
                         hold_ratio=None,
+                        pressed_side=pressed_side,
                     )
                 )
                 continue
@@ -292,6 +310,7 @@ class NoteBase:
                     lane_index=lane_index,
                     hit_error_ms=hit_error_ms,
                     hold_ratio=None,
+                    pressed_side=pressed_side,
                 )
             )
 

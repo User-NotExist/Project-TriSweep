@@ -44,6 +44,17 @@ class PlayData:
         self._base_penalty_raw = 0
         self._collect_penalty_raw = 0
         self._bonus_penalty_raw = 0
+        self._round_end_reason = "completed"
+        self._played_to_song_end = True
+
+    def set_round_end_status(self, reason: str):
+        normalized_reason = str(reason or "completed").strip().lower()
+        valid_reasons = {"completed", "skipped", "died"}
+        if normalized_reason not in valid_reasons:
+            normalized_reason = "completed"
+
+        self._round_end_reason = normalized_reason
+        self._played_to_song_end = normalized_reason == "completed"
 
     @staticmethod
     def _target_judgement_for_note(note: NoteBase):
@@ -80,6 +91,7 @@ class PlayData:
         self._recorded_hit_score.append({
             "object_type" : "NOTE",
             "type_id" : note.note_type,
+            "time": note.start_time,
             "current_score" : self.current_score
         })
 
@@ -96,6 +108,13 @@ class PlayData:
             self._collect_raw += actual_collect_score
             target_collect_score = int(obstacle.get_score(JudgementLevel.CRITPERFECT))
             self._collect_penalty_raw += max(0, target_collect_score - actual_collect_score)
+
+            self._recorded_hit_score.append({
+                "object_type": "OBSTACLE",
+                "type_id": obstacle.obstacle_type,
+                "time": obstacle.start_time,
+                "current_score": self.current_score
+            })
 
     def _get_play_count(self):
         diff_save_folder = self._song.folder_path / self._chart.name
@@ -251,6 +270,8 @@ class PlayData:
             "collect_penalty_raw": int(self._collect_penalty_raw),
             "bonus_penalty_raw": int(self._bonus_penalty_raw),
             "total_score": int(self.current_score),
+            "round_end_reason": str(self._round_end_reason),
+            "played_to_song_end": bool(self._played_to_song_end),
             "recorded_note_hit": [
                 self._to_serializable_note_hit(entry) for entry in self._recorded_note_hit
             ],

@@ -220,6 +220,7 @@ class PlaySpace(SceneBase):
             return
 
         lane_trigger_counts = [0 for _ in range(self._lane_count)]
+        lane_trigger_sides = [[] for _ in range(self._lane_count)]
 
         for event in events:
             if event.type == pygame.MOUSEMOTION:
@@ -234,6 +235,13 @@ class PlaySpace(SceneBase):
                     self._lane_held_keys[lane_index].add(event.key)
                     if not was_key_held:
                         lane_trigger_counts[lane_index] += 1
+                        pressed_side = -1
+                        lane_key_group = self._lane_keys[lane_index]
+                        if len(lane_key_group) > 0 and event.key == lane_key_group[0]:
+                            pressed_side = 0
+                        elif len(lane_key_group) > 1 and event.key == lane_key_group[1]:
+                            pressed_side = 1
+                        lane_trigger_sides[lane_index].append(pressed_side)
                     self._lane_pressed[lane_index] = bool(self._lane_held_keys[lane_index])
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_ESCAPE:
@@ -249,6 +257,7 @@ class PlaySpace(SceneBase):
                 self._lane_pressed,
                 self._lane_held_keys,
                 lane_trigger_counts,
+                lane_trigger_sides,
             )
 
     def update(self):
@@ -272,6 +281,7 @@ class PlaySpace(SceneBase):
 
             self._is_result_transitioned = True
             self._game_manager.force_complete_round_as_miss()
+            self._game_manager.play_data.set_round_end_status("died")
             self.switch_to_scene(Result(self._game_manager.play_data))
             return
 
@@ -283,6 +293,7 @@ class PlaySpace(SceneBase):
                 self._skip_hold_started_ms = None
                 self._is_result_transitioned = True
                 self._game_manager.force_complete_round_as_miss()
+                self._game_manager.play_data.set_round_end_status("skipped")
                 self.switch_to_scene(Result(self._game_manager.play_data))
                 return
 
@@ -296,6 +307,7 @@ class PlaySpace(SceneBase):
             from scenes.result import Result
 
             self._is_result_transitioned = True
+            self._game_manager.play_data.set_round_end_status("completed")
             self.switch_to_scene(Result(self._game_manager.play_data))
 
     def _get_skip_remaining_ms(self):

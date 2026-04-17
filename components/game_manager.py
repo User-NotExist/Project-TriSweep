@@ -60,8 +60,8 @@ class GameManager:
 
         judgement = note_payload.get("judgement", JudgementLevel.MISS)
         hit_error_ms = int(note_payload.get("hit_error_ms", 0))
-        lane_index = int(note_payload.get("lane", -1))
-        self._play_data.record_note(note, hit_error_ms, judgement, lane_index)
+        pressed_side = int(note_payload.get("pressed_side", -1))
+        self._play_data.record_note(note, hit_error_ms, judgement, pressed_side)
 
         self._publish_judgement(
             {
@@ -422,7 +422,14 @@ class GameManager:
             self._record_obstacle_judgement(payload)
             self._remove_obstacle_instance(obstacle)
 
-    def process_input(self, lane_pressed, lane_held_keys, lane_trigger_counts=None, now_ms: Optional[int] = None):
+    def process_input(
+        self,
+        lane_pressed,
+        lane_held_keys,
+        lane_trigger_counts=None,
+        lane_trigger_sides=None,
+        now_ms: Optional[int] = None,
+    ):
         """
         Evaluate lane input against the closest note on each lane.
 
@@ -447,6 +454,18 @@ class GameManager:
                 was_pressed = bool(self._previous_lane_pressed[lane_index])
                 lane_trigger_counts[lane_index] = 1 if (lane_is_pressed and not was_pressed) else 0
 
+        normalized_trigger_sides = []
+        for lane_index in range(lane_count):
+            if lane_trigger_sides is not None and lane_index < len(lane_trigger_sides):
+                lane_sides = lane_trigger_sides[lane_index]
+                if lane_sides is None:
+                    lane_sides = []
+                normalized_trigger_sides.append([int(side) for side in lane_sides])
+                continue
+
+            trigger_count = max(0, int(lane_trigger_counts[lane_index]))
+            normalized_trigger_sides.append([-1 for _ in range(trigger_count)])
+
         for lane_index in range(lane_count):
             lane_is_pressed = bool(lane_pressed[lane_index])
             lane_notes = [note for note in self._loaded_notes if int(note.lane) == lane_index]
@@ -455,6 +474,7 @@ class GameManager:
                 lane_notes=lane_notes,
                 lane_is_pressed=lane_is_pressed,
                 trigger_count=max(0, int(lane_trigger_counts[lane_index])),
+                trigger_sides=normalized_trigger_sides[lane_index],
                 now_elapsed_ms=now_elapsed_ms,
                 hit_window_ms=int(self._hit_window_ms),
                 active_hold=self._active_long_holds.get(lane_index),

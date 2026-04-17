@@ -105,6 +105,8 @@ class SongSelect(SceneBase):
         self._record_sort_order = "desc"
         self._record_header_hitboxes = []
         self._record_row_hitboxes = []
+        self._record_scroll_index = 0
+        self._record_max_start_index = 0
         self._record_columns = [
             ("player_name", "Player", 0.38, False),
             ("play_number", "Play", 0.18, True),
@@ -245,12 +247,16 @@ class SongSelect(SceneBase):
     def _load_selected_play_records(self, force=False):
         song, chart = self._get_selected_song_and_chart()
         cache_key = None if song is None or chart is None else (str(song.folder_path), chart.name)
+        cache_changed = cache_key != self._play_record_cache_key
 
         if not force and cache_key == self._play_record_cache_key:
             return
 
         self._play_record_cache_key = cache_key
         self._selected_play_records = []
+        if cache_changed:
+            self._record_scroll_index = 0
+            self._record_max_start_index = 0
 
         if song is None or chart is None:
             return
@@ -307,6 +313,14 @@ class SongSelect(SceneBase):
         self._selected_play_records.sort(
             key=lambda row: self._safe_int(row.get(self._record_sort_key), 0),
             reverse=reverse,
+        )
+
+    def _scroll_record_rows(self, delta_rows):
+        if not self.show_play_records:
+            return
+        self._record_scroll_index = max(
+            0,
+            min(self._record_max_start_index, self._record_scroll_index + int(delta_rows)),
         )
 
     def _handle_record_table_click(self, pos):
@@ -699,6 +713,10 @@ class SongSelect(SceneBase):
                 if self.show_play_records:
                     if event.button == 1:
                         self._handle_record_table_click(event.pos)
+                    elif event.button == 4:
+                        self._scroll_record_rows(-1)
+                    elif event.button == 5:
+                        self._scroll_record_rows(1)
                     continue
 
                 if event.button == 1:
@@ -735,6 +753,10 @@ class SongSelect(SceneBase):
                 if self.show_play_records:
                     if event.key == pygame.K_ESCAPE:
                         self.show_play_records = False
+                    elif event.key == pygame.K_UP:
+                        self._scroll_record_rows(-1)
+                    elif event.key == pygame.K_DOWN:
+                        self._scroll_record_rows(1)
                     continue
 
                 if event.key == pygame.K_LEFT and self.songs:
@@ -753,6 +775,11 @@ class SongSelect(SceneBase):
                     self.switch_to_scene(MainMenu())
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self._start_selected_chart()
+
+            elif event.type == pygame.MOUSEWHEEL and self.show_play_records:
+                # pygame.MOUSEWHEEL: positive y means scroll up.
+                self._scroll_record_rows(-int(event.y))
+                continue
 
     def update(self):
         # Switch happens at end of frame in main loop; avoid preview restart after scene exit.
@@ -1099,7 +1126,10 @@ class SongSelect(SceneBase):
         rows_start_y = header_y + row_height + 6
         available_h = panel_rect.bottom - 20 - rows_start_y
         max_rows = max(1, available_h // row_height)
-        visible_rows = self._selected_play_records[:max_rows]
+        self._record_max_start_index = max(0, len(self._selected_play_records) - max_rows)
+        self._record_scroll_index = max(0, min(self._record_max_start_index, self._record_scroll_index))
+        start_index = self._record_scroll_index
+        visible_rows = self._selected_play_records[start_index:start_index + max_rows]
         mouse_pos = pygame.mouse.get_pos()
 
         for row_index, row in enumerate(visible_rows):
@@ -1128,3 +1158,21 @@ class SongSelect(SceneBase):
                 else:
                     row_pos = row_surface.get_rect(midleft=(col_rect.left + 8, row_y + row_height // 2))
                 screen.blit(row_surface, row_pos)
+
+        if len(self._selected_play_records) > max_rows:
+            track_w = 8
+            track_rect = pygame.Rect(table_right + 6, rows_start_y, track_w, max_rows * row_height)
+            pygame.draw.rect(screen, (40, 48, 67), track_rect, border_radius=4)
+
+            if self._record_max_start_index > 0:
+                thumb_h = max(18, int(track_rect.height * (max_rows / len(self._selected_play_records))))
+                travel_h = max(1, track_rect.height - thumb_h)
+                progress = self._record_scroll_index / self._record_max_start_index
+                thumb_y = track_rect.y + int(progress * travel_h)
+            else:
+                thumb_h = track_rect.height
+                thumb_y = track_rect.y
+
+            thumb_rect = pygame.Rect(track_rect.x, thumb_y, track_rect.width, thumb_h)
+            pygame.draw.rect(screen, (121, 165, 255), thumb_rect, border_radius=4)
+
