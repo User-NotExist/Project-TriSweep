@@ -38,6 +38,8 @@ class GameManager:
         self._music_fade_duration_ms = 1500
         self._music_fade_due_ms = None
         self._music_fade_started = False
+        self._chart_lead_in_ms = 0
+        self._is_chart_lead_in_initialized = False
 
         self.__starting_ms = None
 
@@ -219,7 +221,38 @@ class GameManager:
         elapsed_ms = self._get_elapsed_ms(now_ms)
         if elapsed_ms is None:
             return None
-        return int(elapsed_ms) + self._get_input_offset_ms()
+        timeline_elapsed_ms = int(elapsed_ms) - int(self._chart_lead_in_ms)
+        return int(timeline_elapsed_ms) + self._get_input_offset_ms()
+
+    def _initialize_chart_lead_in(self, judgement_y: int):
+        if self._is_chart_lead_in_initialized:
+            return
+
+        note_speed = max(1.0, float(Config.PLAYER_LANE_SPEED)) * 100.0
+        note_speed_px_per_ms = note_speed / 1000.0
+        if note_speed_px_per_ms <= 0.0:
+            self._chart_lead_in_ms = 0
+            self._is_chart_lead_in_initialized = True
+            return
+
+        earliest_start_ms = None
+        for note in self._loaded_notes:
+            start_ms = int(getattr(note, "start_time", 0))
+            earliest_start_ms = start_ms if earliest_start_ms is None else min(earliest_start_ms, start_ms)
+
+        for obstacle in self._loaded_obstacles:
+            start_ms = int(getattr(obstacle, "start_time", 0))
+            earliest_start_ms = start_ms if earliest_start_ms is None else min(earliest_start_ms, start_ms)
+
+        if earliest_start_ms is None:
+            self._chart_lead_in_ms = 0
+            self._is_chart_lead_in_initialized = True
+            return
+
+        # Shift the gameplay timeline so the earliest object enters from the top edge.
+        travel_ms_to_top = int(judgement_y / note_speed_px_per_ms)
+        self._chart_lead_in_ms = max(0, travel_ms_to_top - int(earliest_start_ms))
+        self._is_chart_lead_in_initialized = True
 
     @staticmethod
     def _timing_label(hit_error_ms: int):
@@ -520,21 +553,19 @@ class GameManager:
         except Exception:
             pass
 
-    def start_game(self):
+    def start_game(self, judgement_y: Optional[int] = None):
         if self.__starting_ms is not None:
             return
 
-        self.__starting_ms = pygame.time.get_ticks()
+        now_ms = pygame.time.get_ticks()
+        self.__starting_ms = int(now_ms)
         self._is_playing = True
         self._last_tick_ms = self.__starting_ms
         self._music_fade_due_ms = None
         self._music_fade_started = False
-        music_delay_ms = max(0, int(getattr(Config, "OFFSET_MUSIC", 0)))
-        if music_delay_ms == 0:
-            self._music_start_due_ms = self.__starting_ms
-            self._start_song_music()
-        else:
-            self._music_start_due_ms = self.__starting_ms + music_delay_ms
+        self._music_start_due_ms = self.__starting_ms
+        if judgement_y is not None:
+            self._initialize_chart_lead_in(int(judgement_y))
 
     def update_game(
         self,
@@ -549,7 +580,12 @@ class GameManager:
 
         now_ms = pygame.time.get_ticks()
         self._update_music_start(now_ms)
-        elapsed_ms = now_ms - self.__starting_ms
+        self._initialize_chart_lead_in(int(judgement_y))
+
+        elapsed_ms = self._get_elapsed_ms(now_ms)
+        if elapsed_ms is None:
+            elapsed_ms = 0
+        timeline_elapsed_ms = int(elapsed_ms) - int(self._chart_lead_in_ms)
         if self._last_tick_ms is None:
             delta_ms = 0
         else:
@@ -564,7 +600,7 @@ class GameManager:
         player = self._player
         self._play_data.record_player_x(
             player_x=player.x_position,
-            timestamp_ms=elapsed_ms,
+            timestamp_ms=max(0, timeline_elapsed_ms),
             center_x=(screen.get_width() / 2.0),
         )
         player_width = max(player.sprite_pixel_size[0], int(lane_width * player.SPRITE_WIDTH_RATIO))
@@ -578,77 +614,12 @@ class GameManager:
         )
         obstacle_judgements = []
 
-        for note in self._loaded_notes.copy():
-            note_surface = note.draw_note(lane_width, note_speed)
-            note_height = note_surface.get_height()
-
-            note_bottom_y = int(judgement_y - ((note.start_time - elapsed_ms) * note_speed_px_per_ms))
-            note_top_y = note_bottom_y - note_height
-
-            # Drop notes that have fully passed below the screen.
-            if note_top_y > screen_height:
-                if self._is_note_in_active_long_hold(note):
-                    continue
-
-                late_ms = int(elapsed_ms - int(note.start_time))
-                if late_ms > self._hit_window_ms:
-                    miss_payload = note.build_miss_payload(int(note.lane), elapsed_ms)
-                    self._record_note_judgement(miss_payload)
-                    self._loaded_notes.remove(note)
-                continue
-
-            if note_bottom_y < 0 or note_top_y > screen_height:
-                continue
-
-            lane_x = lane_start_x + (int(note.lane) * (lane_width + lane_gap))
-            hold_state = self._active_long_holds.get(int(note.lane))
-            is_active_held_long = (
-                note.is_long
-                and hold_state is not None
-                and hold_state.get("note") is note
-                and bool(hold_state.get("is_holding"))
-            )
-
-            visible_top_y = max(0, note_top_y)
-            visible_bottom_y = min(screen_height, note_bottom_y)
-            if is_active_held_long:
-                # While holding a long note, hide any portion below the judgement line.
-                visible_bottom_y = min(visible_bottom_y, judgement_y)
-
-            self._blit_vertical_slice(
-                screen,
-                note_surface,
-                lane_x,
-                note_top_y,
-                visible_top_y,
-                visible_bottom_y,
-            )
-
-        simultaneous_lane_map = {}
-        for note in self._loaded_notes:
-            simultaneous_lane_map.setdefault(note.start_time, set()).add(int(note.lane))
-
-        full_lane_width = (3 * lane_width) + (2 * lane_gap)
-        for start_time, lanes in simultaneous_lane_map.items():
-            if len(lanes) < 2:
-                continue
-
-            line_y = int(judgement_y - ((start_time - elapsed_ms) * note_speed_px_per_ms))
-            if 0 <= line_y <= screen_height:
-                pygame.draw.line(
-                    screen,
-                    (138, 137, 136),
-                    (lane_start_x, line_y),
-                    (lane_start_x + full_lane_width, line_y),
-                    3,
-                )
-
         for obstacle in self._loaded_obstacles.copy():
             obstacle_surface = obstacle.draw_obstacle(lane_width, note_speed)
             obstacle_height = obstacle_surface.get_height()
 
             obstacle_bottom_y = int(
-                judgement_y - ((obstacle.start_time - elapsed_ms) * note_speed_px_per_ms)
+                judgement_y - ((obstacle.start_time - timeline_elapsed_ms) * note_speed_px_per_ms)
             )
             obstacle_top_y = obstacle_bottom_y - obstacle_height
 
@@ -662,7 +633,7 @@ class GameManager:
             is_touching_player = intersects_judgement_line and intersects_player_span
             is_player_in_obstacle_lane = player_lane_index == int(obstacle.lane)
             collect_hold_state = self._active_collect_holds.get(id(obstacle))
-            collect_hit_error_ms = int(elapsed_ms - int(obstacle.start_time))
+            collect_hit_error_ms = int(timeline_elapsed_ms - int(obstacle.start_time))
             within_collect_window = abs(collect_hit_error_ms) <= self._collect_hit_window_ms
 
             if isinstance(obstacle, CollectObstacle) and obstacle.is_long:
@@ -672,10 +643,10 @@ class GameManager:
                     )
                     if is_in_lane_state and is_player_in_obstacle_lane:
                         from_ms = max(collect_hold_state["last_sample_ms"], int(obstacle.start_time))
-                        to_ms = min(elapsed_ms, int(obstacle.end_time))
+                        to_ms = min(timeline_elapsed_ms, int(obstacle.end_time))
                         if to_ms > from_ms:
                             collect_hold_state["held_ms"] += to_ms - from_ms
-                        collect_hold_state["last_sample_ms"] = elapsed_ms
+                        collect_hold_state["last_sample_ms"] = timeline_elapsed_ms
 
                     if not is_player_in_obstacle_lane and is_in_lane_state:
                         collect_hold_state["is_in_lane"] = False
@@ -689,14 +660,14 @@ class GameManager:
                         )
                         continue
 
-                    if elapsed_ms >= int(obstacle.end_time):
-                        self._finalize_long_collect_hold(obstacle, obstacle_judgements, elapsed_ms)
+                    if timeline_elapsed_ms >= int(obstacle.end_time):
+                        self._finalize_long_collect_hold(obstacle, obstacle_judgements, timeline_elapsed_ms)
                         continue
 
                 elif is_player_in_obstacle_lane and within_collect_window:
                     self._active_collect_holds[id(obstacle)] = {
                         "is_in_lane": True,
-                        "last_sample_ms": elapsed_ms,
+                        "last_sample_ms": timeline_elapsed_ms,
                         "held_ms": 0,
                         "start_error_ms": collect_hit_error_ms,
                     }
@@ -705,7 +676,7 @@ class GameManager:
                     self._finalize_long_collect_hold(
                         obstacle,
                         obstacle_judgements,
-                        elapsed_ms,
+                        timeline_elapsed_ms,
                         forced_judgement=JudgementLevel.MISS,
                     )
                     continue
@@ -717,7 +688,7 @@ class GameManager:
                         self._finalize_long_collect_hold(
                             obstacle,
                             obstacle_judgements,
-                            elapsed_ms,
+                            timeline_elapsed_ms,
                             forced_judgement=JudgementLevel.MISS,
                         )
                     else:
@@ -725,7 +696,7 @@ class GameManager:
                             obstacle,
                             JudgementLevel.MISS,
                             obstacle_judgements,
-                            hit_error_ms=int(elapsed_ms - int(obstacle.start_time)),
+                            hit_error_ms=int(timeline_elapsed_ms - int(obstacle.start_time)),
                         )
                 else:
                     self._active_collect_holds.pop(id(obstacle), None)
@@ -781,6 +752,72 @@ class GameManager:
 
             if intersects_player_span:
                 self._damage_accumulator += (delta_ms / 1000.0) * self._touch_damage_per_second
+
+        # Render notes after obstacles so notes are always visually above obstacle sprites.
+        for note in self._loaded_notes.copy():
+            note_surface = note.draw_note(lane_width, note_speed)
+            note_height = note_surface.get_height()
+
+            note_bottom_y = int(judgement_y - ((note.start_time - timeline_elapsed_ms) * note_speed_px_per_ms))
+            note_top_y = note_bottom_y - note_height
+
+            # Drop notes that have fully passed below the screen.
+            if note_top_y > screen_height:
+                if self._is_note_in_active_long_hold(note):
+                    continue
+
+                late_ms = int(timeline_elapsed_ms - int(note.start_time))
+                if late_ms > self._hit_window_ms:
+                    miss_payload = note.build_miss_payload(int(note.lane), timeline_elapsed_ms)
+                    self._record_note_judgement(miss_payload)
+                    self._loaded_notes.remove(note)
+                continue
+
+            if note_bottom_y < 0 or note_top_y > screen_height:
+                continue
+
+            lane_x = lane_start_x + (int(note.lane) * (lane_width + lane_gap))
+            hold_state = self._active_long_holds.get(int(note.lane))
+            is_active_held_long = (
+                note.is_long
+                and hold_state is not None
+                and hold_state.get("note") is note
+                and bool(hold_state.get("is_holding"))
+            )
+
+            visible_top_y = max(0, note_top_y)
+            visible_bottom_y = min(screen_height, note_bottom_y)
+            if is_active_held_long:
+                # While holding a long note, hide any portion below the judgement line.
+                visible_bottom_y = min(visible_bottom_y, judgement_y)
+
+            self._blit_vertical_slice(
+                screen,
+                note_surface,
+                lane_x,
+                note_top_y,
+                visible_top_y,
+                visible_bottom_y,
+            )
+
+        simultaneous_lane_map = {}
+        for note in self._loaded_notes:
+            simultaneous_lane_map.setdefault(note.start_time, set()).add(int(note.lane))
+
+        full_lane_width = (3 * lane_width) + (2 * lane_gap)
+        for start_time, lanes in simultaneous_lane_map.items():
+            if len(lanes) < 2:
+                continue
+
+            line_y = int(judgement_y - ((start_time - timeline_elapsed_ms) * note_speed_px_per_ms))
+            if 0 <= line_y <= screen_height:
+                pygame.draw.line(
+                    screen,
+                    (138, 137, 136),
+                    (lane_start_x, line_y),
+                    (lane_start_x + full_lane_width, line_y),
+                    3,
+                )
 
         if self._damage_accumulator >= 1.0:
             damage_to_apply = int(self._damage_accumulator)
