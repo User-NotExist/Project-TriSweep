@@ -41,8 +41,8 @@ class PlaySpace(SceneBase):
         self._is_result_transitioned = False
         self._result_transition_delay_ms = 3000
         self._round_finished_at_ms = None
-        self._skip_hold_duration_ms = 5000
-        self._skip_warning_window_ms = 5000
+        self._skip_hold_duration_ms = 3000
+        self._skip_warning_window_ms = 3000
         self._skip_hold_started_ms = None
         self._is_dead = False
         self._dead_started_ms = None
@@ -52,6 +52,8 @@ class PlaySpace(SceneBase):
         self._countdown_start_ms = pygame.time.get_ticks()
         self._countdown_font = self._create_countdown_font(170)
         self._countdown_message_font = self._create_countdown_font(42)
+        self._prestart_lane_font = self._create_countdown_font(24)
+        self._prestart_info_font = self._create_countdown_font(22)
         self._countdown_message_text = "Get Ready"
         self._start_flash_duration_ms = 450
         self._start_flash_text = "Good luck!"
@@ -91,6 +93,8 @@ class PlaySpace(SceneBase):
         self._skip_warning_font.set_bold(True)
         self._skip_warning_sub_font.set_bold(True)
         self._dead_canvas_font.set_bold(True)
+        self._prestart_lane_font.set_bold(True)
+        self._prestart_info_font.set_bold(True)
 
         pygame.mouse.set_visible(False)
         pygame.event.set_grab(True)
@@ -198,6 +202,58 @@ class PlaySpace(SceneBase):
 
         screen.blit(flash_shadow_surface, flash_shadow_rect)
         screen.blit(flash_surface, flash_rect)
+
+    @staticmethod
+    def _format_key_name(keycode):
+        try:
+            key_name = pygame.key.name(int(keycode))
+        except Exception:
+            return "?"
+
+        if not key_name:
+            return "?"
+        return key_name.upper()
+
+    def _draw_prestart_lane_keybinds(self, screen, lane_start_x, judgement_y):
+        title_text = "Lane Keybind"
+        title_surface = self._prestart_info_font.render(title_text, True, (220, 228, 245))
+        title_shadow = self._prestart_info_font.render(title_text, True, (0, 0, 0))
+        title_rect = title_surface.get_rect(midbottom=(screen.get_width() // 2, max(36, judgement_y - 82)))
+        screen.blit(title_shadow, (title_rect.x + 2, title_rect.y + 2))
+        screen.blit(title_surface, title_rect)
+
+        for lane_index in range(self._lane_count):
+            lane_center_x = lane_start_x + lane_index * (self._lane_width + self._lane_gap) + (self._lane_width // 2)
+            key_group = self._lane_keys[lane_index] if lane_index < len(self._lane_keys) else []
+            if len(key_group) >= 2:
+                key_text = f"{self._format_key_name(key_group[0])} / {self._format_key_name(key_group[1])}"
+            elif len(key_group) == 1:
+                key_text = self._format_key_name(key_group[0])
+            else:
+                key_text = "-"
+
+            key_surface = self._prestart_lane_font.render(key_text, True, (236, 242, 255))
+            key_shadow = self._prestart_lane_font.render(key_text, True, (0, 0, 0))
+            key_rect = key_surface.get_rect(midbottom=(lane_center_x, max(54, judgement_y - 48)))
+            screen.blit(key_shadow, (key_rect.x + 2, key_rect.y + 2))
+            screen.blit(key_surface, key_rect)
+
+    def _draw_prestart_speed_info(self, screen, judgement_y):
+        forced_speed = getattr(self._game_manager.playing_chart, "forced_note_speed", None)
+        config_speed = float(getattr(Config, "PLAYER_LANE_SPEED", 0.0))
+
+        if forced_speed is not None:
+            info_text = f"Speed: FORCED {float(forced_speed):g}x (Config {config_speed:g}x ignored)"
+            info_color = (255, 208, 125)
+        else:
+            info_text = f"Speed: {config_speed:g}x"
+            info_color = (184, 225, 255)
+
+        info_surface = self._prestart_info_font.render(info_text, True, info_color)
+        info_shadow = self._prestart_info_font.render(info_text, True, (0, 0, 0))
+        info_rect = info_surface.get_rect(midbottom=(screen.get_width() // 2, max(28, judgement_y - 114)))
+        screen.blit(info_shadow, (info_rect.x + 2, info_rect.y + 2))
+        screen.blit(info_surface, info_rect)
 
     def process_input(self, events):
         surface = pygame.display.get_surface()
@@ -557,6 +613,10 @@ class PlaySpace(SceneBase):
             self._draw_countdown_overlay(screen, countdown_seconds)
         elif not self._is_game_started and self._is_start_flash_active():
             self._draw_start_flash_overlay(screen)
+
+        if not self._is_game_started:
+            self._draw_prestart_lane_keybinds(screen, start_x, judgement_y)
+            self._draw_prestart_speed_info(screen, judgement_y)
 
         skip_remaining_ms = self._get_skip_remaining_ms()
         if (
