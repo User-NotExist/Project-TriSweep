@@ -116,6 +116,7 @@ class SongSelect(SceneBase):
 
         self.preview_fade_in_ms = 250
         self.preview_fade_out_ms = 250
+        self._handoff_preview_to_main_menu = False
 
         self.songs = []
         self._thumb_cache = {}
@@ -704,7 +705,23 @@ class SongSelect(SceneBase):
 
         self.switch_to_scene(Loading(selected_song, chart, difficulty_color))
 
+    def _build_main_menu_audio_handoff(self):
+        if not self.songs:
+            return None
+
+        selected_song = self.songs[max(0, min(self.selected_index, len(self.songs) - 1))]
+        return {
+            "song_folder_path": str(selected_song.folder_path),
+            "preview_started_ms": self._preview_started_ms,
+            "preview_duration_sec": self._preview_duration_sec,
+            "preview_fade_out_ms": self.preview_fade_out_ms,
+            "preview_is_fading_out": self._preview_is_fading_out,
+        }
+
     def on_scene_exit(self):
+        if self._handoff_preview_to_main_menu:
+            self._handoff_preview_to_main_menu = False
+            return
         self._stop_preview()
 
     def process_input(self, events):
@@ -772,7 +789,9 @@ class SongSelect(SceneBase):
 
                 if event.key == pygame.K_ESCAPE:
                     from scenes.main_menu import MainMenu
-                    self.switch_to_scene(MainMenu())
+
+                    self._handoff_preview_to_main_menu = True
+                    self.switch_to_scene(MainMenu(self._build_main_menu_audio_handoff()))
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self._start_selected_chart()
 

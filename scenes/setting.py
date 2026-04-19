@@ -20,8 +20,9 @@ class SettingItem:
 
 
 class Setting(SceneBase):
-    def __init__(self):
+    def __init__(self, audio_handoff=None):
         super().__init__()
+        self._audio_handoff = audio_handoff or {}
 
         self.background_color = (18, 22, 31)
         self.panel_color = (26, 31, 43)
@@ -520,7 +521,7 @@ class Setting(SceneBase):
                 if event.key == pygame.K_ESCAPE:
                     from scenes.main_menu import MainMenu
 
-                    self.switch_to_scene(MainMenu())
+                    self.switch_to_scene(MainMenu(self._audio_handoff))
                     continue
 
                 if event.key == pygame.K_UP and self.items:
