@@ -1062,8 +1062,6 @@ class SongSelect(SceneBase):
             return
 
         self._load_selected_play_records()
-        if not self._selected_play_records:
-            return
 
         width, height = screen.get_size()
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -1131,6 +1129,15 @@ class SongSelect(SceneBase):
         start_index = self._record_scroll_index
         visible_rows = self._selected_play_records[start_index:start_index + max_rows]
         mouse_pos = pygame.mouse.get_pos()
+
+        if not self._selected_play_records:
+            empty_surface = self.record_row_font.render(
+                "No play records for this song and difficulty.",
+                True,
+                self.subtle_text_color,
+            )
+            empty_rect = empty_surface.get_rect(center=(panel_rect.centerx, rows_start_y + row_height))
+            screen.blit(empty_surface, empty_rect)
 
         for row_index, row in enumerate(visible_rows):
             row_y = rows_start_y + row_index * row_height
