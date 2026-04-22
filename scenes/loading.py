@@ -24,7 +24,7 @@ class Loading(SceneBase):
 		self._meta_font = self._create_font(18)
 		self._small_font = self._create_font(14)
 
-		self._min_display_ms = 10000
+		self._min_display_ms = 3000
 		self._started_ms = pygame.time.get_ticks()
 		self._game_manager = GameManager(
 			self._song,
