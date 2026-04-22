@@ -1,0 +1,42 @@
+{
+    /*Player Setting*/
+    "PLAYER_MOVE_SPEED": 1.0,
+    "PLAYER_LANE_SPEED": 9.00000000000001,
+    "PLAYER_NAME": "GUEST",
+    // Player image should be at least 1:1 scale
+    "PLAYER_IMAGE_PATH": "./guest_player.png",
+
+    /*Key Setting*/
+    "LANE_0_KEY_0": "q",
+    "LANE_0_KEY_1": "i",
+    "LANE_1_KEY_0": "w",
+    "LANE_1_KEY_1": "o",
+    "LANE_2_KEY_0": "e",
+    "LANE_2_KEY_1": "p",
+
+    /*Game Setting*/
+    "WINDOW_WIDTH": 1280,
+    "WINDOW_HEIGHT": 850,
+    "FPS": 60,
+    "MUSIC_VOLUME": 0.24,
+    "SOUND_EFFECT_VOLUME": 0.5,
+
+    /*Offset Setting (ms)*/
+    "OFFSET_MUSIC": 0,
+    "OFFSET_INPUT": 0,
+
+    /*Timing Setting (ms)*/
+    "CRITICAL_PERFECT_TIMING": 40,
+    "PERFECT_TIMING": 60,
+    "GREAT_TIMING": 100,
+    "GOOD_TIMING": 150,
+    // For early miss timing
+    "MISS_TIMING": 300,
+
+    /*Score Setting (%)*/
+    "CRITICAL_PERFECT_SCORE": 100,
+    "PERFECT_SCORE": 100,
+    "GREAT_SCORE": 80,
+    "GOOD_SCORE": 50,
+    "SCORE_DISPLAY_DECREASING": true,
+}

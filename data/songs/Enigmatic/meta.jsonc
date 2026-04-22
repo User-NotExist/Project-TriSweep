@@ -1,0 +1,38 @@
+{
+  /*Song title*/
+  "title": "Enigmatic",
+  /*Translated song title*/
+  "translated_title": "",
+  /*Artist name*/
+  "artist": "RGredsky",
+
+  "jacket_path": "./jacket.png",
+
+  "version": "1.0",
+
+  "bpm": 110,
+  "offset": 0.0,
+  "length": 1400,
+  "previewStart": 49.0,
+  "previewDuration": 22.0,
+
+  "music_path": "./music.mp3",
+  "difficulty": [
+    {
+    "name": "Expert",
+    "chart_author": "ErR0r_uS3RN0))----FoUN6666",
+    "level": 7,
+    "chart_path": "./expert.gay"
+    }
+  ],
+  "tags": [
+    "gothic",
+    "hardstyle",
+    "mysterious"
+  ],
+  "meta": {
+    "created_at": "2026-02-10T00:00:00Z",
+    "updated_at": "2026-04-22T00:00:00Z"
+  },
+  "hidden": false
+}

@@ -1,0 +1,39 @@
+{
+  /*Song title*/
+  "title": "RHYTHM TEST",
+  /*Translated song title*/
+  "translated_title": "HIT ON THE BEAT AND AIM FOR ALL PERFECT",
+  /*Artist name*/
+  "artist": "=D",
+
+  "jacket_path": "./jacket.png",
+
+  "version": "1.0",
+
+  "bpm": 120,
+  "offset": 0.0,
+  "length": 71.0,
+  "previewStart": 2.0,
+  "previewDuration": 17.0,
+
+  "music_path": "./music.wav",
+  "difficulty": [
+    {
+    "name": "Advanced",
+    "chart_author": "THE TEST IS ON",
+    "level": 5.0,
+    "chart_path": "./advanced.gay",
+    "forced_note_speed": 9.0
+    }
+  ],
+  "tags": [
+    "metronome",
+    "starter",
+    "test"
+  ],
+  "meta": {
+    "created_at": "2026-03-01T00:00:00Z",
+    "updated_at": "2026-04-22T00:00:00Z"
+  },
+  "hidden": false
+}
