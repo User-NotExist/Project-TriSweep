@@ -86,6 +86,7 @@ class SongSelect(SceneBase):
         self.song_card_rects = []
         self.diff_card_rects = []
         self.start_button_rect = pygame.Rect(0, 0, 0, 0)
+        self.back_button_rect = pygame.Rect(0, 0, 0, 0)
         self.layout_size = (0, 0)
         self.grid_area = pygame.Rect(0, 0, 0, 0)
         self.sidebar_area = pygame.Rect(0, 0, 0, 0)
@@ -723,6 +724,12 @@ class SongSelect(SceneBase):
                     if self._handle_sort_click(event.pos):
                         continue
 
+                    if self.back_button_rect.collidepoint(event.pos):
+                        from scenes.main_menu import MainMenu
+
+                        self.switch_to_scene(MainMenu())
+                        continue
+
                     if self.start_button_rect.collidepoint(event.pos):
                         self._start_selected_chart()
                         continue
@@ -1031,12 +1038,13 @@ class SongSelect(SceneBase):
 
             diff_y += card_height + card_gap
 
-        start_h = 42
+        button_h = 42
+        start_y = self.sidebar_area.bottom - sidebar_pad - button_h
         self.start_button_rect = pygame.Rect(
             self.sidebar_area.x + sidebar_pad,
-            self.sidebar_area.bottom - sidebar_pad - start_h,
+            start_y,
             self.sidebar_area.width - (sidebar_pad * 2),
-            start_h,
+            button_h,
         )
 
         pygame.draw.rect(screen, (40, 155, 85), self.start_button_rect, border_radius=10)
@@ -1044,6 +1052,18 @@ class SongSelect(SceneBase):
 
         start_label = self.song_title_font.render("Start", True, (255, 255, 255))
         screen.blit(start_label, start_label.get_rect(center=self.start_button_rect.center))
+
+    def _render_back_button(self, screen, height):
+        button_w = 160
+        button_h = 42
+        x = self.margin
+        y = height - self.margin - button_h
+
+        self.back_button_rect = pygame.Rect(x, y, button_w, button_h)
+        pygame.draw.rect(screen, (35, 42, 58), self.back_button_rect, border_radius=10)
+        pygame.draw.rect(screen, (95, 105, 133), self.back_button_rect, width=2, border_radius=10)
+        back_label = self.song_title_font.render("Back", True, self.text_color)
+        screen.blit(back_label, back_label.get_rect(center=self.back_button_rect.center))
 
     def render(self, screen):
         width, height = screen.get_size()
@@ -1053,6 +1073,7 @@ class SongSelect(SceneBase):
         screen.fill(self.background_color)
         self._render_grid(screen)
         self._render_sidebar(screen, height)
+        self._render_back_button(screen, height)
         self._render_play_record_table(screen)
 
     def _render_play_record_table(self, screen):

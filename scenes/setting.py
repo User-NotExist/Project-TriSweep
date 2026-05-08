@@ -38,6 +38,7 @@ class Setting(SceneBase):
         self.content_area = pygame.Rect(0, 0, 0, 0)
         self.save_button_rect = pygame.Rect(0, 0, 0, 0)
         self.reset_button_rect = pygame.Rect(0, 0, 0, 0)
+        self.back_button_rect = pygame.Rect(0, 0, 0, 0)
 
         self.title_font = self._create_font(28, bold=True)
         self.section_font = self._create_font(18, bold=True)
@@ -268,18 +269,23 @@ class Setting(SceneBase):
         self.layout_size = (width, height)
         title_h = self.title_font.get_height()
 
+        footer_pad = 12
+        status_h = self.small_font.get_height()
+        button_h = 34
+        footer_block = status_h + footer_pad + button_h
+
         self.content_area = pygame.Rect(
             self.margin,
             self.margin + title_h + 18,
             max(1, width - self.margin * 2),
-            max(1, height - (self.margin * 2) - title_h - 90),
+            max(1, height - (self.margin * 2) - title_h - footer_block - 28),
         )
 
-        footer_y = self.content_area.bottom + 10
+        footer_y = height - self.margin - button_h
         button_w = 120
-        button_h = 34
         self.save_button_rect = pygame.Rect(width - self.margin - button_w, footer_y, button_w, button_h)
         self.reset_button_rect = pygame.Rect(self.save_button_rect.left - 12 - button_w, footer_y, button_w, button_h)
+        self.back_button_rect = pygame.Rect(self.margin, footer_y, button_w, button_h)
 
         self._compute_scroll_limits()
 
@@ -460,6 +466,11 @@ class Setting(SceneBase):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
+                    if self.back_button_rect.collidepoint(event.pos):
+                        from scenes.main_menu import MainMenu
+
+                        self.switch_to_scene(MainMenu())
+                        continue
                     if self.save_button_rect.collidepoint(event.pos):
                         self._save_changes()
                         continue
@@ -665,6 +676,13 @@ class Setting(SceneBase):
 
         screen.set_clip(clip_before)
 
+        back_fill = (68, 84, 117)
+
+        pygame.draw.rect(screen, back_fill, self.back_button_rect, border_radius=8)
+        pygame.draw.rect(screen, (95, 105, 133), self.back_button_rect, width=2, border_radius=8)
+        back_label = self.value_font.render("Back", True, self.text_color)
+        screen.blit(back_label, back_label.get_rect(center=self.back_button_rect.center))
+
         save_fill = (40, 155, 85)
         reset_fill = (68, 84, 117)
 
@@ -679,4 +697,5 @@ class Setting(SceneBase):
         screen.blit(save_label, save_label.get_rect(center=self.save_button_rect.center))
 
         status_surface = self.small_font.render(self.status_message, True, self._status_color())
-        screen.blit(status_surface, (self.margin, self.content_area.bottom + 18))
+        status_y = max(self.margin, self.back_button_rect.top - status_surface.get_height() - 10)
+        screen.blit(status_surface, (self.margin, status_y))

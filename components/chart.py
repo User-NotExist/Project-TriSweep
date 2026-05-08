@@ -53,14 +53,14 @@ class Chart:
     @property
     def notes(self):
         if not self._is_chart_initialized:
-            self.load_from_gay_file()
+            self.load_from_gacf_file()
 
         return self._notes
 
     @property
     def obstacles(self):
         if not self._is_chart_initialized:
-            self.load_from_gay_file()
+            self.load_from_gacf_file()
 
         return self._obstacles
 
@@ -79,7 +79,7 @@ class Chart:
                 for note in notes:
                     note.color_override = self.SIMULTANEOUS_NOTE_COLOR
 
-    def load_from_gay_file(self, chart_path=None):
+    def load_from_gacf_file(self, chart_path=None):
         resolved_path = Path(chart_path) if chart_path is not None else self.chart_path
 
         self._notes = []
