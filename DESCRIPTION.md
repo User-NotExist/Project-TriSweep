@@ -107,7 +107,16 @@ Describe the characteristics of the data used in your system.
 
 ---
 
-## 6. External Sources
+## 6. Game Screenshots
+![game1](./screenshots/gameplay/game_menu.png)
+![game2](./screenshots/gameplay/game_song_select.png)
+![game3](./screenshots/gameplay/game_collect.png)
+![game4](./screenshots/gameplay/game_obstacle.png)
+![game5](./screenshots/gameplay/game_config.png)
+
+---
+
+## 7. External Sources
 
 1. Scene Manager Template, https://nerdparadise.com/programming/pygame/part7 [game source code]
 2. [FeuxFollet](https://github.com/FeuxFollet) [default player image]
