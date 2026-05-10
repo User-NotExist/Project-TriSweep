@@ -72,6 +72,8 @@ This is a valid keybind:
 |  O  | Right side of lane 1 |
 |  E  |  Left side of lane 2 |
 |  P  | Right side of lane 2 |
+#### Mouse Horizontal movement for player movement.
+
 ### Additional Binding
 | Key | Function                                                                               |
 |-----|----------------------------------------------------------------------------------------|
