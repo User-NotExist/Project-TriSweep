@@ -14,6 +14,8 @@ Created as a final project for subject 01219116 and 01219117 Computer Programmin
 
 ---
 
+Required `python` >= `3.14`
+
 ## Installation
 To Clone this project:
 ```sh
